@@ -185,6 +185,8 @@ def compute_kpis(records: List[Dict[str, Any]]) -> Dict[str, Any]:
 def index():
     """Serve the main analytics dashboard."""
     records = load_records()
+    # Sort with newest timestamps at the top
+    records = sorted(records, key=lambda x: x.get("timestamp", ""), reverse=True)
     kpis = compute_kpis(records)
     storage_insights = compute_storage_insights(records)
     condition_insights = compute_condition_insights(records)
@@ -230,30 +232,44 @@ def api_scrape():
 
         new_all = engine.build_full_dataset(new_verified, include_grading_matrix=True)
 
-        # Merge with existing records — deduplicate by source_url + storage + data_origin
+        # Upsert into existing records: update existing by key, or append if new
         existing = load_records()
-        existing_keys = {
-            (r.get("source_url", ""), r.get("storage", ""), r.get("data_origin", ""))
-            for r in existing
+        existing_map = {
+            (r.get("source_url", ""), r.get("storage", ""), r.get("data_origin", "")): idx
+            for idx, r in enumerate(existing)
         }
-        merged = list(existing)
+
+        updated_count = 0
         added_count = 0
+        now_iso = datetime.now(timezone.utc).isoformat()
+
         for rec in new_all:
+            rec_dict = rec.model_dump()
+            rec_dict["timestamp"] = now_iso
             key = (rec.source_url, rec.storage, rec.data_origin)
-            if key not in existing_keys:
-                merged.append(rec.model_dump())
-                existing_keys.add(key)
+            if key in existing_map:
+                idx = existing_map[key]
+                existing[idx].update(rec_dict)
+                updated_count += 1
+            else:
+                existing.append(rec_dict)
+                existing_map[key] = len(existing) - 1
                 added_count += 1
 
-        # Persist
-        save_to_json([type("R", (), {"model_dump": lambda self, r=r: r})() for r in merged], OUTPUT_JSON_PATH)
-        save_to_csv_raw(merged, OUTPUT_CSV_PATH)
+        # Persist updated dataset
+        save_to_json(existing, OUTPUT_JSON_PATH)
+        save_to_csv_raw(existing, OUTPUT_CSV_PATH)
+
+        model_name = new_verified[0].model.split("(")[0].strip() if new_verified else "Device"
+        msg = f"Successfully scraped {model_name}! Updated {updated_count} records with fresh prices and timestamps, added {added_count} new records."
 
         return jsonify({
             "success": True,
-            "message": f"Scraped {len(new_verified)} verified variants. Added {added_count} new records.",
+            "message": msg,
             "new_records": [r.model_dump() for r in new_verified],
-            "total_records": len(merged),
+            "total_records": len(existing),
+            "updated_count": updated_count,
+            "added_count": added_count,
         })
 
     except Exception as exc:
@@ -284,14 +300,40 @@ def api_scrape_all():
             }), 500
 
         final_records = engine.build_full_dataset(all_verified, include_grading_matrix=True)
-        save_to_json(final_records, OUTPUT_JSON_PATH)
-        save_to_csv_raw([r.model_dump() for r in final_records], OUTPUT_CSV_PATH)
+
+        existing = load_records()
+        existing_map = {
+            (r.get("source_url", ""), r.get("storage", ""), r.get("data_origin", "")): idx
+            for idx, r in enumerate(existing)
+        }
+
+        updated_count = 0
+        added_count = 0
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        for rec in final_records:
+            rec_dict = rec.model_dump()
+            rec_dict["timestamp"] = now_iso
+            key = (rec.source_url, rec.storage, rec.data_origin)
+            if key in existing_map:
+                idx = existing_map[key]
+                existing[idx].update(rec_dict)
+                updated_count += 1
+            else:
+                existing.append(rec_dict)
+                existing_map[key] = len(existing) - 1
+                added_count += 1
+
+        save_to_json(existing, OUTPUT_JSON_PATH)
+        save_to_csv_raw(existing, OUTPUT_CSV_PATH)
 
         return jsonify({
             "success": True,
-            "message": f"Full catalog scraped. {len(all_verified)} verified records, {len(final_records)} total with condition matrix.",
+            "message": f"Full catalog refreshed! {updated_count} records updated with current prices, {added_count} new added.",
             "verified_count": len(all_verified),
-            "total_records": len(final_records),
+            "total_records": len(existing),
+            "updated_count": updated_count,
+            "added_count": added_count,
             "errors": errors,
         })
 

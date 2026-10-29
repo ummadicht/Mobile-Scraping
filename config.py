@@ -22,6 +22,16 @@ TARGET_DEVICES = [
         "url": "https://www.cashify.in/sell-old-mobile-phone/used-apple-iphone-12",
     },
     {
+        "brand": "Apple",
+        "model_family": "iPhone 11",
+        "url": "https://www.cashify.in/sell-old-mobile-phone/used-apple-iphone-11",
+    },
+    {
+        "brand": "Apple",
+        "model_family": "iPhone 14",
+        "url": "https://www.cashify.in/sell-old-mobile-phone/used-apple-iphone-14",
+    },
+    {
         "brand": "Samsung",
         "model_family": "Galaxy S21 5G",
         "url": "https://www.cashify.in/sell-old-mobile-phone/used-samsung-galaxy-s21-5g",
@@ -30,6 +40,11 @@ TARGET_DEVICES = [
         "brand": "Samsung",
         "model_family": "Galaxy S23 5G",
         "url": "https://www.cashify.in/sell-old-mobile-phone/used-samsung-galaxy-s23-5g",
+    },
+    {
+        "brand": "Samsung",
+        "model_family": "Galaxy Note 20",
+        "url": "https://www.cashify.in/sell-old-mobile-phone/used-samsung-galaxy-note-20-8-gb-256-gb",
     },
 ]
 
