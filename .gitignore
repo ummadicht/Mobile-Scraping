@@ -1,3 +1,9 @@
+# Flask server helpers (not for version control)
+run_server.py
+test_http.py
+flask.log
+flask_err.log
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -73,3 +79,4 @@ ehthumbs.db
 
 # Logs
 *.log
+

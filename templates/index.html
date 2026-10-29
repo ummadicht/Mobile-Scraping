@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Mobile Price Intelligence Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50:'#eff6ff', 100:'#dbeafe', 500:'#3b82f6', 600:'#2563eb', 700:'#1d4ed8', 900:'#1e3a8a' },
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <style>
+    body { background: #f0f4f8; font-family: 'Inter', sans-serif; }
+    .glass { background: rgba(255,255,255,0.92); backdrop-filter: blur(10px); }
+    .brand-badge-apple  { background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; }
+    .brand-badge-samsung{ background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
+    .origin-verified   { background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
+    .origin-simulated  { background:#fef9c3; color:#854d0e; border:1px solid #fde68a; }
+    .grade-a { background:#dcfce7; color:#166534; }
+    .grade-b { background:#dbeafe; color:#1d4ed8; }
+    .grade-c { background:#fef3c7; color:#92400e; }
+    .grade-d { background:#fee2e2; color:#991b1b; }
+    #toast { transition: all 0.3s ease; }
+    .spinner { border:3px solid rgba(59,130,246,.2); border-top-color:#3b82f6; border-radius:50%; animation:spin 0.8s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .kpi-card { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+    .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.08); }
+    .scrape-btn { transition: all 0.15s ease; }
+    .scrape-btn:active { transform: scale(0.97); }
+    th { position: sticky; top: 0; z-index: 10; }
+    .table-row:hover { background:#f8fafc; }
+    @media(max-width:768px){ .hide-mobile { display:none; } }
+  </style>
+</head>
+<body class="min-h-screen">
+
+<!-- ===== TOP NAVBAR ===== -->
+<nav class="bg-gradient-to-r from-blue-900 to-blue-700 shadow-lg">
+  <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
+        <i class="fa-solid fa-mobile-screen text-white text-lg"></i>
+      </div>
+      <div>
+        <h1 class="text-white font-bold text-lg leading-tight">Mobile Price Intelligence</h1>
+        <p class="text-blue-200 text-xs">Refurbished Buyback Analytics · Powered by Cashify</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="last-updated-nav" class="text-blue-200 text-xs hidden sm:block">
+        Last synced: <strong>{{ kpis.last_updated }}</strong>
+      </span>
+      <a href="/download/csv"
+         class="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-sm px-3 py-1.5 rounded-lg transition font-medium">
+        <i class="fa-solid fa-file-csv text-green-300"></i> CSV
+      </a>
+      <a href="/download/json"
+         class="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-sm px-3 py-1.5 rounded-lg transition font-medium">
+        <i class="fa-solid fa-file-code text-yellow-300"></i> JSON
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- ===== TOAST NOTIFICATION ===== -->
+<div id="toast" class="fixed top-4 right-4 z-50 hidden max-w-sm w-full">
+  <div id="toast-inner" class="rounded-xl shadow-xl px-4 py-3 flex items-start gap-3 border">
+    <div id="toast-icon" class="text-xl mt-0.5"></div>
+    <div class="flex-1 min-w-0">
+      <p id="toast-title" class="font-semibold text-sm"></p>
+      <p id="toast-msg" class="text-xs mt-0.5 opacity-80 break-words"></p>
+    </div>
+    <button onclick="hideToast()" class="text-gray-400 hover:text-gray-600 ml-1 mt-0.5">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+  </div>
+</div>
+
+<!-- ===== LOADING OVERLAY ===== -->
+<div id="loading-overlay" class="fixed inset-0 bg-blue-900/60 z-40 hidden flex items-center justify-center">
+  <div class="glass rounded-2xl px-10 py-8 flex flex-col items-center gap-4 shadow-2xl">
+    <div class="spinner w-12 h-12"></div>
+    <p id="loading-msg" class="text-blue-900 font-semibold text-sm">Scraping live data…</p>
+    <p class="text-gray-500 text-xs">This may take 10–30 seconds</p>
+  </div>
+</div>
+
+<main class="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+  <!-- ===== KPI CARDS ===== -->
+  <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+
+    <div class="kpi-card glass rounded-2xl p-4 shadow border border-white col-span-1">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs text-gray-500 font-medium uppercase tracking-wide">Total Records</span>
+        <div class="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
+          <i class="fa-solid fa-database text-blue-600 text-xs"></i>
+        </div>
+      </div>
+      <p id="kpi-total" class="text-3xl font-bold text-gray-800">{{ kpis.total_records }}</p>
+      <p class="text-xs text-gray-400 mt-1">All pricing records</p>
+    </div>
+
+    <div class="kpi-card glass rounded-2xl p-4 shadow border border-white col-span-1">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs text-gray-500 font-medium uppercase tracking-wide">Verified Live</span>
+        <div class="w-7 h-7 rounded-lg bg-green-100 flex items-center justify-center">
+          <i class="fa-solid fa-circle-check text-green-600 text-xs"></i>
+        </div>
+      </div>
+      <p id="kpi-verified" class="text-3xl font-bold text-green-700">{{ kpis.verified_count }}</p>
+      <p class="text-xs text-gray-400 mt-1">Cashify live quotes</p>
+    </div>
+
+    <div class="kpi-card glass rounded-2xl p-4 shadow border border-white col-span-1">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs text-gray-500 font-medium uppercase tracking-wide">Avg Buyback</span>
+        <div class="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center">
+          <i class="fa-solid fa-indian-rupee-sign text-purple-600 text-xs"></i>
+        </div>
+      </div>
+      <p id="kpi-avg" class="text-3xl font-bold text-purple-700">₹{{ '{:,}'.format(kpis.avg_price) }}</p>
+      <p class="text-xs text-gray-400 mt-1">Across verified records</p>
+    </div>
+
+    <div class="kpi-card glass rounded-2xl p-4 shadow border border-white col-span-1">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs text-gray-500 font-medium uppercase tracking-wide">Highest Quote</span>
+        <div class="w-7 h-7 rounded-lg bg-yellow-100 flex items-center justify-center">
+          <i class="fa-solid fa-trophy text-yellow-600 text-xs"></i>
+        </div>
+      </div>
+      <p id="kpi-max" class="text-3xl font-bold text-yellow-700">₹{{ '{:,}'.format(kpis.max_price) }}</p>
+      <p id="kpi-max-device" class="text-xs text-gray-400 mt-1 truncate" title="{{ kpis.max_device }}">{{ kpis.max_device.split('(')[0].strip() }}</p>
+    </div>
+
+    <div class="kpi-card glass rounded-2xl p-4 shadow border border-white col-span-1">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs text-gray-500 font-medium uppercase tracking-wide">Lowest Quote</span>
+        <div class="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center">
+          <i class="fa-solid fa-arrow-trend-down text-red-500 text-xs"></i>
+        </div>
+      </div>
+      <p id="kpi-min" class="text-3xl font-bold text-red-600">₹{{ '{:,}'.format(kpis.min_price) }}</p>
+      <p id="kpi-min-device" class="text-xs text-gray-400 mt-1 truncate" title="{{ kpis.min_device }}">{{ kpis.min_device.split('(')[0].strip() }}</p>
+    </div>
+
+    <div class="kpi-card glass rounded-2xl p-4 shadow border border-white col-span-1">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs text-gray-500 font-medium uppercase tracking-wide">Brands</span>
+        <div class="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
+          <i class="fa-solid fa-tags text-slate-600 text-xs"></i>
+        </div>
+      </div>
+      <p id="kpi-brands" class="text-3xl font-bold text-gray-800">{{ kpis.brands_tracked }}</p>
+      <p class="text-xs text-gray-400 mt-1">Brands tracked</p>
+    </div>
+
+  </section>
+
+  <!-- ===== SCRAPING CONTROL PANEL ===== -->
+  <section class="glass rounded-2xl shadow border border-white p-5">
+    <div class="flex items-center gap-2 mb-4">
+      <i class="fa-solid fa-satellite-dish text-blue-600"></i>
+      <h2 class="font-bold text-gray-800 text-base">Scraping Control Panel</h2>
+      <span class="ml-2 text-xs text-gray-400 font-normal">Select a device or enter a custom URL to scrape live prices</span>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+      <!-- Quick Device Cards -->
+      <div class="lg:col-span-1">
+        <label class="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
+          <i class="fa-solid fa-mobile-screen-button mr-1"></i> Quick Select Device
+        </label>
+        <div class="grid grid-cols-1 gap-2">
+          {% for device in target_devices %}
+          <button onclick="selectDevice('{{ device.url }}', this)"
+                  class="device-card text-left px-3 py-2.5 rounded-xl border-2 border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition flex items-center gap-3 group">
+            {% if device.brand == 'Apple' %}
+              <div class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center group-hover:bg-blue-100 transition">
+                <i class="fa-brands fa-apple text-gray-700 text-base group-hover:text-blue-700"></i>
+              </div>
+            {% else %}
+              <div class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 transition">
+                <i class="fa-solid fa-mobile text-blue-600 text-sm"></i>
+              </div>
+            {% endif %}
+            <div class="min-w-0">
+              <p class="font-semibold text-sm text-gray-800 truncate">{{ device.brand }}</p>
+              <p class="text-xs text-gray-500 truncate">{{ device.model_family }}</p>
+            </div>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Custom URL Input + Action -->
+      <div class="lg:col-span-2 flex flex-col gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
+            <i class="fa-solid fa-link mr-1"></i> Cashify Device URL
+          </label>
+          <div class="flex gap-2">
+            <input id="custom-url-input" type="url"
+                   placeholder="https://www.cashify.in/sell-old-mobile-phone/used-apple-iphone-12"
+                   class="flex-1 px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition font-mono text-gray-700"/>
+            <button onclick="clearUrl()"
+                    class="px-3 py-2.5 border-2 border-gray-200 rounded-xl hover:bg-gray-100 transition text-gray-500 hover:text-gray-700" title="Clear">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          <p class="text-xs text-gray-400 mt-1">Only <code>cashify.in/sell-old-mobile-phone/</code> URLs are supported</p>
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-3 mt-auto">
+          <button onclick="scrapeSingle()"
+                  class="scrape-btn flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold py-3 px-5 rounded-xl text-sm shadow transition">
+            <i class="fa-solid fa-bolt"></i>
+            Scrape Selected Device
+          </button>
+          <button onclick="scrapeAll()"
+                  class="scrape-btn flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-blue-700 to-blue-500 hover:from-blue-800 hover:to-blue-600 text-white font-semibold py-3 px-5 rounded-xl text-sm shadow transition">
+            <i class="fa-solid fa-rotate"></i>
+            Refresh All Devices
+          </button>
+        </div>
+
+        <!-- Status indicator -->
+        <div id="scrape-status" class="hidden rounded-xl px-4 py-3 text-sm border"></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===== DATA TABLE ===== -->
+  <section class="glass rounded-2xl shadow border border-white overflow-hidden">
+
+    <!-- Table Header Toolbar -->
+    <div class="px-5 py-4 border-b border-gray-100 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+      <div class="flex items-center gap-2 flex-1">
+        <i class="fa-solid fa-table text-blue-600"></i>
+        <h2 class="font-bold text-gray-800 text-base">Pricing Intelligence Table</h2>
+        <span id="record-count-badge" class="ml-1 bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">
+          {{ records|length }} records
+        </span>
+      </div>
+      <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+        <!-- Search -->
+        <div class="relative">
+          <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+          <input id="search-input" type="text" placeholder="Search model…"
+                 oninput="filterTable()"
+                 class="pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 w-40"/>
+        </div>
+        <!-- Brand Filter -->
+        <select id="filter-brand" onchange="filterTable()"
+                class="py-2 pl-3 pr-7 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white">
+          <option value="">All Brands</option>
+          <option value="Apple">Apple</option>
+          <option value="Samsung">Samsung</option>
+        </select>
+        <!-- Origin Filter -->
+        <select id="filter-origin" onchange="filterTable()"
+                class="py-2 pl-3 pr-7 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white">
+          <option value="">All Origins</option>
+          <option value="verified_scraped">Verified Only</option>
+          <option value="sample_condition_graded">Simulated Only</option>
+        </select>
+        <!-- Grade Filter -->
+        <select id="filter-grade" onchange="filterTable()"
+                class="py-2 pl-3 pr-7 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white">
+          <option value="">All Grades</option>
+          <option value="Grade A">Grade A</option>
+          <option value="Grade B">Grade B</option>
+          <option value="Grade C">Grade C</option>
+          <option value="Grade D">Grade D</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm" id="pricing-table">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Brand</th>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Model</th>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Storage</th>
+            <th class="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Buyback Price</th>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Grade</th>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hide-mobile">Defects</th>
+            <th class="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Origin</th>
+            <th class="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hide-mobile">Source</th>
+          </tr>
+        </thead>
+        <tbody id="table-body">
+          {% for rec in records %}
+          {% set grade_letter = 'A' if 'Grade A' in rec.condition else ('B' if 'Grade B' in rec.condition else ('C' if 'Grade C' in rec.condition else 'D')) %}
+          <tr class="table-row border-b border-gray-50 transition"
+              data-brand="{{ rec.brand }}"
+              data-model="{{ rec.model }}"
+              data-origin="{{ rec.data_origin }}"
+              data-grade="{{ 'Grade ' + grade_letter }}">
+            <td class="px-4 py-3">
+              {% if rec.brand == 'Apple' %}
+              <span class="brand-badge-apple text-xs font-semibold px-2 py-1 rounded-lg inline-flex items-center gap-1">
+                <i class="fa-brands fa-apple text-xs"></i> Apple
+              </span>
+              {% else %}
+              <span class="brand-badge-samsung text-xs font-semibold px-2 py-1 rounded-lg inline-flex items-center gap-1">
+                <i class="fa-solid fa-s text-xs"></i> Samsung
+              </span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3">
+              <p class="font-medium text-gray-800 text-sm">{{ rec.model.split('(')[0].strip() }}</p>
+              <p class="text-xs text-gray-400">{{ rec.model.split('(')[1].rstrip(')') if '(' in rec.model else '' }}</p>
+            </td>
+            <td class="px-4 py-3">
+              <span class="bg-gray-100 text-gray-700 text-xs font-bold px-2 py-1 rounded-lg">{{ rec.storage }}</span>
+            </td>
+            <td class="px-4 py-3 text-right">
+              <span class="font-bold text-gray-900 text-base">₹{{ '{:,}'.format(rec.buyback_price) }}</span>
+              <p class="text-xs text-gray-400">INR</p>
+            </td>
+            <td class="px-4 py-3">
+              {% if grade_letter == 'A' %}
+              <span class="grade-a text-xs font-bold px-2 py-1 rounded-lg">Grade A</span>
+              {% elif grade_letter == 'B' %}
+              <span class="grade-b text-xs font-bold px-2 py-1 rounded-lg">Grade B</span>
+              {% elif grade_letter == 'C' %}
+              <span class="grade-c text-xs font-bold px-2 py-1 rounded-lg">Grade C</span>
+              {% else %}
+              <span class="grade-d text-xs font-bold px-2 py-1 rounded-lg">Grade D</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 hide-mobile">
+              <p class="text-xs text-gray-600 max-w-xs truncate" title="{{ rec.defects }}">{{ rec.defects }}</p>
+            </td>
+            <td class="px-4 py-3 text-center">
+              {% if rec.data_origin == 'verified_scraped' %}
+              <span class="origin-verified text-xs font-bold px-2 py-1 rounded-full inline-flex items-center gap-1">
+                <i class="fa-solid fa-circle-check text-xs"></i> Verified
+              </span>
+              {% else %}
+              <span class="origin-simulated text-xs font-bold px-2 py-1 rounded-full inline-flex items-center gap-1">
+                <i class="fa-solid fa-flask-vial text-xs"></i> Simulated
+              </span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-center hide-mobile">
+              <a href="{{ rec.source_url }}" target="_blank" rel="noopener"
+                 class="text-blue-500 hover:text-blue-700 transition" title="{{ rec.source_url }}">
+                <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="8" class="text-center py-16 text-gray-400">
+              <i class="fa-solid fa-database text-4xl mb-3 block opacity-20"></i>
+              <p class="font-medium">No records yet.</p>
+              <p class="text-xs mt-1">Use the Scraping Control Panel above to collect live pricing data.</p>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Table Footer -->
+    <div class="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
+      <p id="visible-count" class="text-xs text-gray-400"></p>
+      <div class="flex gap-3">
+        <a href="/download/csv"
+           class="flex items-center gap-1.5 text-xs text-green-700 font-semibold bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg transition border border-green-200">
+          <i class="fa-solid fa-file-csv"></i> Download CSV
+        </a>
+        <a href="/download/json"
+           class="flex items-center gap-1.5 text-xs text-yellow-700 font-semibold bg-yellow-50 hover:bg-yellow-100 px-3 py-1.5 rounded-lg transition border border-yellow-200">
+          <i class="fa-solid fa-file-code"></i> Download JSON
+        </a>
+      </div>
+    </div>
+
+  </section>
+
+    <!-- ===== PRICE INSIGHTS PANEL ===== -->
+  <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+    <!-- Storage Impact -->
+    <div class="glass rounded-2xl shadow border border-white p-5">
+      <h3 class="font-bold text-gray-800 text-sm mb-3 flex items-center gap-2">
+        <i class="fa-solid fa-chart-bar text-blue-600"></i>
+        Storage Capacity Impact on Buyback Value
+      </h3>
+      {% if storage_insights %}
+      <div class="space-y-4">
+        {% for group in storage_insights %}
+        <div>
+          <p class="text-xs font-semibold text-gray-600 mb-1.5">{{ group.model }}</p>
+          {% for v in group.variants %}
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-xs text-gray-500 w-14 text-right shrink-0">{{ v.storage }}</span>
+            <div class="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full"
+                   style="width: {{ v.pct }}%"></div>
+            </div>
+            <span class="text-xs font-bold text-gray-800 w-20 shrink-0">₹{{ '{:,}'.format(v.buyback_price) }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-sm text-gray-400 text-center py-8">Scrape devices to see storage impact analysis</p>
+      {% endif %}
+    </div>
+
+    <!-- Condition Degradation -->
+    <div class="glass rounded-2xl shadow border border-white p-5">
+      <h3 class="font-bold text-gray-800 text-sm mb-3 flex items-center gap-2">
+        <i class="fa-solid fa-sliders text-purple-600"></i>
+        Condition Grade Degradation (iPhone 13 128GB Case Study)
+      </h3>
+      {% if condition_insights %}
+      <div class="space-y-2">
+        {% for row in condition_insights %}
+        <div class="flex items-center gap-3">
+          <span class="{{ row.badge_class }} text-xs font-bold px-2 py-1 rounded-lg w-16 text-center shrink-0">Grade {{ row.grade_letter }}</span>
+          <div class="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full {{ row.bar_class }} rounded-full flex items-center px-3"
+                 style="width: {{ row.pct }}%">
+              <span class="text-white text-xs font-bold">{{ row.pct }}%</span>
+            </div>
+          </div>
+          <span class="text-xs font-bold text-gray-800 w-20 text-right shrink-0">₹{{ '{:,}'.format(row.buyback_price) }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-sm text-gray-400 text-center py-8">Scrape iPhone 13 data to see condition analysis</p>
+      {% endif %}
+    </div>
+
+  </section>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="text-center py-4 text-xs text-gray-400">
+    <p>Mobile Price Intelligence POC · Data sourced from <a href="https://www.cashify.in" class="text-blue-500 hover:underline" target="_blank">Cashify.in</a> public pricing pages</p>
+    <p class="mt-1">Built with Flask + Python · Authorized scraping of public catalog pages only</p>
+  </footer>
+
+</main>
+
+<script>
+// ===================== STATE =====================
+let selectedUrl = "";
+
+// ===================== DEVICE SELECTION =====================
+function selectDevice(url, btn) {
+  selectedUrl = url;
+  document.getElementById("custom-url-input").value = url;
+  document.querySelectorAll(".device-card").forEach(b => {
+    b.classList.remove("border-blue-500", "bg-blue-50", "ring-2", "ring-blue-200");
+  });
+  btn.classList.add("border-blue-500", "bg-blue-50", "ring-2", "ring-blue-200");
+}
+
+function clearUrl() {
+  document.getElementById("custom-url-input").value = "";
+  selectedUrl = "";
+  document.querySelectorAll(".device-card").forEach(b => {
+    b.classList.remove("border-blue-500", "bg-blue-50", "ring-2", "ring-blue-200");
+  });
+}
+
+// ===================== SCRAPING =====================
+async function scrapeSingle() {
+  const url = document.getElementById("custom-url-input").value.trim();
+  if (!url) {
+    showToast("error", "No Device Selected", "Please select a device or enter a Cashify URL first.");
+    return;
+  }
+  showLoading("Scraping " + url.split("/").pop().replace(/-/g, " ") + "…");
+  try {
+    const res = await fetch("/api/scrape", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({url})
+    });
+    const data = await res.json();
+    hideLoading();
+    if (data.success) {
+      showToast("success", "Scrape Complete!", data.message);
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      showToast("error", "Scrape Failed", data.error || "Unknown error.");
+    }
+  } catch(e) {
+    hideLoading();
+    showToast("error", "Network Error", e.message);
+  }
+}
+
+async function scrapeAll() {
+  showLoading("Refreshing all catalog devices… This may take 30 seconds.");
+  try {
+    const res = await fetch("/api/scrape-all", {method: "POST"});
+    const data = await res.json();
+    hideLoading();
+    if (data.success) {
+      showToast("success", "Full Catalog Refreshed!", data.message);
+      setTimeout(() => location.reload(), 1800);
+    } else {
+      showToast("error", "Scrape Failed", data.error || "Unknown error.");
+    }
+  } catch(e) {
+    hideLoading();
+    showToast("error", "Network Error", e.message);
+  }
+}
+
+// ===================== TABLE FILTERING =====================
+function filterTable() {
+  const search  = document.getElementById("search-input").value.toLowerCase();
+  const brand   = document.getElementById("filter-brand").value;
+  const origin  = document.getElementById("filter-origin").value;
+  const grade   = document.getElementById("filter-grade").value;
+  const rows    = document.querySelectorAll("#table-body tr[data-brand]");
+  let visible   = 0;
+
+  rows.forEach(row => {
+    const matchSearch = !search || row.dataset.model.toLowerCase().includes(search);
+    const matchBrand  = !brand  || row.dataset.brand === brand;
+    const matchOrigin = !origin || row.dataset.origin === origin;
+    const matchGrade  = !grade  || row.dataset.grade === grade;
+    const show        = matchSearch && matchBrand && matchOrigin && matchGrade;
+    row.style.display = show ? "" : "none";
+    if (show) visible++;
+  });
+
+  document.getElementById("visible-count").textContent =
+    `Showing ${visible} of ${rows.length} records`;
+  document.getElementById("record-count-badge").textContent = `${visible} records`;
+}
+
+// ===================== LOADING =====================
+function showLoading(msg) {
+  document.getElementById("loading-msg").textContent = msg || "Loading…";
+  document.getElementById("loading-overlay").classList.remove("hidden");
+  document.getElementById("loading-overlay").classList.add("flex");
+}
+function hideLoading() {
+  document.getElementById("loading-overlay").classList.add("hidden");
+  document.getElementById("loading-overlay").classList.remove("flex");
+}
+
+// ===================== TOAST =====================
+let toastTimer;
+function showToast(type, title, msg) {
+  clearTimeout(toastTimer);
+  const toast = document.getElementById("toast");
+  const inner = document.getElementById("toast-inner");
+  const icon  = document.getElementById("toast-icon");
+
+  document.getElementById("toast-title").textContent = title;
+  document.getElementById("toast-msg").textContent   = msg;
+
+  if (type === "success") {
+    inner.className = "rounded-xl shadow-xl px-4 py-3 flex items-start gap-3 border bg-green-50 border-green-200";
+    icon.innerHTML  = '<i class="fa-solid fa-circle-check text-green-600"></i>';
+  } else if (type === "error") {
+    inner.className = "rounded-xl shadow-xl px-4 py-3 flex items-start gap-3 border bg-red-50 border-red-200";
+    icon.innerHTML  = '<i class="fa-solid fa-circle-xmark text-red-500"></i>';
+  } else {
+    inner.className = "rounded-xl shadow-xl px-4 py-3 flex items-start gap-3 border bg-blue-50 border-blue-200";
+    icon.innerHTML  = '<i class="fa-solid fa-circle-info text-blue-600"></i>';
+  }
+
+  toast.classList.remove("hidden");
+  toastTimer = setTimeout(hideToast, 6000);
+}
+function hideToast() {
+  document.getElementById("toast").classList.add("hidden");
+}
+
+// ===================== INIT =====================
+document.addEventListener("DOMContentLoaded", () => {
+  filterTable();
+});
+</script>
+
+</body>
+</html>
