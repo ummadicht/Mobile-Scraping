@@ -1,19 +1,21 @@
 """
 Flask Web Application — Refurbished Mobile Price Intelligence Dashboard.
-Provides a professional web interface for data analysts to:
-  - View all tracked device buyback prices
-  - Trigger on-demand scraping for individual or all devices
-  - Filter, search, and analyze pricing data
-  - Download CSV and JSON exports
+Provides an interactive web interface for data analysts to:
+  - Configure scraping parameters (condition multipliers, storage filters, timeouts, retries)
+  - Trigger on-demand scraping for individual or all devices with custom parameters
+  - Recalculate condition grading matrices dynamically
+  - Filter, sort, search, and interactively simulate device valuations
 """
+import copy
+import csv
 import json
 import logging
 import os
-import sys
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from flask import (
     Flask,
@@ -27,13 +29,15 @@ from flask import (
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config import (
-    BASE_DIR,
+    CONDITION_TIERS,
+    MAX_RETRIES,
     OUTPUT_CSV_PATH,
     OUTPUT_JSON_PATH,
+    REQUEST_TIMEOUT_SECONDS,
     TARGET_DEVICES,
 )
-from exporter import save_to_csv, save_to_json
 from grading_engine import GradingEngine
+from models import MobilePriceRecord
 from scraper import CashifyScraper
 
 # ---------------------------------------------------------------------------
@@ -53,29 +57,64 @@ logger = logging.getLogger("webapp")
 # Helper Utilities
 # ---------------------------------------------------------------------------
 def load_records() -> List[Dict[str, Any]]:
-    """Load current pricing records from output.json if it exists."""
+    """Load and deduplicate current pricing records from output.json if it exists."""
     if OUTPUT_JSON_PATH.exists():
         with open(OUTPUT_JSON_PATH, encoding="utf-8") as f:
-            return json.load(f)
+            raw = json.load(f)
+        # Deduplicate by (source_url, storage, condition) keeping latest timestamp
+        dedup: Dict[tuple, Dict[str, Any]] = {}
+        for r in raw:
+            grade_prefix = r.get("condition", "").split(":")[0].strip()
+            key = (r.get("source_url", ""), r.get("storage", ""), grade_prefix)
+            if key not in dedup or r.get("timestamp", "") >= dedup[key].get("timestamp", ""):
+                dedup[key] = r
+        return list(dedup.values())
     return []
 
 
+def build_custom_tiers(params: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Build condition tiers dictionary using user-supplied multiplier percentages."""
+    tiers = copy.deepcopy(CONDITION_TIERS)
+    try:
+        if "grade_b" in params and params["grade_b"] is not None:
+            tiers["Grade B (Good)"]["factor"] = round(float(params["grade_b"]) / 100.0, 4)
+        if "grade_c" in params and params["grade_c"] is not None:
+            tiers["Grade C (Fair / Average)"]["factor"] = round(float(params["grade_c"]) / 100.0, 4)
+        if "grade_d" in params and params["grade_d"] is not None:
+            tiers["Grade D (Defective / Broken)"]["factor"] = round(float(params["grade_d"]) / 100.0, 4)
+    except (ValueError, TypeError) as exc:
+        logger.warning("Invalid custom tier multiplier supplied, using defaults: %s", exc)
+    return tiers
+
+
+def filter_by_storage(
+    records: List[MobilePriceRecord], allowed_storages: List[str]
+) -> List[MobilePriceRecord]:
+    """Filter extracted records by user-selected storage capacities."""
+    if not allowed_storages:
+        return records
+    normalized_allowed = {s.upper().replace(" ", "") for s in allowed_storages}
+    filtered = [
+        r for r in records
+        if r.storage.upper().replace(" ", "") in normalized_allowed
+    ]
+    return filtered
+
+
 def compute_storage_insights(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Compute per-model storage variant data for the bar chart in the UI.
-    Returns a list of model groups with sorted variants and percentages.
-    """
+    """Compute per-model storage variant data for the UI charts."""
     verified = [r for r in records if r.get("data_origin") == "verified_scraped"]
 
-    # Group by base model name (without storage spec)
-    groups: Dict[str, List[Dict]] = {}
+    groups: Dict[str, Dict[str, Dict]] = {}
     for r in verified:
         model_name = r.get("model", "")
         base = model_name.split("(")[0].strip() if "(" in model_name else model_name
-        groups.setdefault(base, []).append(r)
+        storage = r.get("storage", "Standard")
+        groups.setdefault(base, {})[storage] = r
 
     result = []
-    for base_model, variants in groups.items():
+    for base_model, storage_map in groups.items():
+        variants = list(storage_map.values())
         if len(variants) < 2:
             continue
         sorted_variants = sorted(variants, key=lambda x: x.get("buyback_price", 0))
@@ -94,9 +133,7 @@ def compute_storage_insights(records: List[Dict[str, Any]]) -> List[Dict[str, An
 
 
 def compute_condition_insights(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Build condition degradation rows for the iPhone 13 128GB case study panel.
-    """
+    """Build condition degradation rows for the case study panel."""
     target = [
         r for r in records
         if "iPhone 13" in r.get("model", "") and r.get("storage", "") == "128 GB"
@@ -112,6 +149,7 @@ def compute_condition_insights(records: List[Dict[str, Any]]) -> List[Dict[str, 
         "C": "bg-gradient-to-r from-yellow-400 to-yellow-500",
         "D": "bg-gradient-to-r from-red-400 to-red-500",
     }
+    seen_grades = set()
     for r in sorted(target, key=lambda x: x.get("buyback_price", 0), reverse=True):
         cond = r.get("condition", "")
         grade_letter = (
@@ -120,6 +158,9 @@ def compute_condition_insights(records: List[Dict[str, Any]]) -> List[Dict[str, 
             else "C" if "Grade C" in cond
             else "D"
         )
+        if grade_letter in seen_grades:
+            continue
+        seen_grades.add(grade_letter)
         pct = int((r["buyback_price"] / max_price) * 100) if max_price else 0
         rows.append({
             "grade_letter": grade_letter,
@@ -153,7 +194,6 @@ def compute_kpis(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     min_rec = min(verified, key=lambda x: x.get("buyback_price", 0)) if verified else None
     brands = set(r.get("brand", "") for r in verified)
 
-    # Get last updated timestamp from records
     timestamps = [r.get("timestamp", "") for r in records if r.get("timestamp")]
     last_updated = "Never"
     if timestamps:
@@ -178,6 +218,46 @@ def compute_kpis(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def upsert_records(
+    existing: List[Dict[str, Any]],
+    new_records: List[MobilePriceRecord],
+    include_matrix: bool = True,
+    target_urls: set = None,
+) -> tuple:
+    """Upsert scraped and graded records cleanly without duplicates."""
+    if not include_matrix and target_urls:
+        # Remove simulated records for the scraped URLs if user opted for live-only
+        existing = [
+            r for r in existing
+            if not (r.get("source_url") in target_urls and r.get("data_origin") == "sample_condition_graded")
+        ]
+
+    existing_map = {
+        (r.get("source_url", ""), r.get("storage", ""), r.get("condition", "").split(":")[0].strip()): idx
+        for idx, r in enumerate(existing)
+    }
+
+    updated_count = 0
+    added_count = 0
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    for rec in new_records:
+        rec_dict = rec.model_dump()
+        rec_dict["timestamp"] = now_iso
+        grade_prefix = rec.condition.split(":")[0].strip()
+        key = (rec.source_url, rec.storage, grade_prefix)
+        if key in existing_map:
+            idx = existing_map[key]
+            existing[idx].update(rec_dict)
+            updated_count += 1
+        else:
+            existing.append(rec_dict)
+            existing_map[key] = len(existing) - 1
+            added_count += 1
+
+    return existing, updated_count, added_count
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -185,7 +265,6 @@ def compute_kpis(records: List[Dict[str, Any]]) -> Dict[str, Any]:
 def index():
     """Serve the main analytics dashboard."""
     records = load_records()
-    # Sort with newest timestamps at the top
     records = sorted(records, key=lambda x: x.get("timestamp", ""), reverse=True)
     kpis = compute_kpis(records)
     storage_insights = compute_storage_insights(records)
@@ -203,92 +282,108 @@ def index():
 @app.route("/api/scrape", methods=["POST"])
 def api_scrape():
     """
-    Trigger a scrape for a single device.
-    Expects JSON body: { "url": "https://cashify.in/..." }
+    Trigger a scrape for one or more selected URLs with custom scrape parameters.
+    Expects JSON body:
+    {
+      "url": "https://www.cashify.in/...", (or "urls": [...])
+      "include_matrix": true,
+      "storages": ["64 GB", "128 GB", "256 GB", "512 GB", "1 TB"],
+      "grade_b": 88,
+      "grade_c": 72,
+      "grade_d": 45,
+      "timeout": 15,
+      "retries": 3
+    }
     """
     data = request.get_json(force=True, silent=True) or {}
-    url = (data.get("url") or "").strip()
+    urls = data.get("urls") or ([data["url"]] if data.get("url") else [])
+    urls = [u.strip() for u in urls if u and u.strip()]
 
-    if not url:
+    if not urls:
         return jsonify({"success": False, "error": "No URL provided."}), 400
 
-    # Validate it's a Cashify mobile pricing URL
-    if not re.match(r"https://www\.cashify\.in/sell-old-mobile-phone/", url):
-        return jsonify({
-            "success": False,
-            "error": "Only Cashify /sell-old-mobile-phone/ URLs are supported."
-        }), 400
-
-    try:
-        scraper = CashifyScraper()
-        engine = GradingEngine()
-
-        new_verified = scraper.scrape_url(url)
-        if not new_verified:
+    for u in urls:
+        if not re.match(r"https://www\.cashify\.in/sell-old-mobile-phone/", u):
             return jsonify({
                 "success": False,
-                "error": f"No pricing data found for that URL. The device may not be listed on Cashify."
+                "error": f"Unsupported URL: {u}. Only Cashify /sell-old-mobile-phone/ URLs are allowed."
+            }), 400
+
+    include_matrix = bool(data.get("include_matrix", True))
+    allowed_storages = data.get("storages") or []
+    timeout = max(5, min(60, int(data.get("timeout", REQUEST_TIMEOUT_SECONDS))))
+    retries = max(1, min(5, int(data.get("retries", MAX_RETRIES))))
+    custom_tiers = build_custom_tiers(data)
+
+    try:
+        scraper = CashifyScraper(timeout=timeout, max_retries=retries)
+        engine = GradingEngine(tiers=custom_tiers)
+
+        all_verified: List[MobilePriceRecord] = []
+        for u in urls:
+            extracted = scraper.scrape_url(u)
+            if allowed_storages:
+                extracted = filter_by_storage(extracted, allowed_storages)
+            all_verified.extend(extracted)
+
+        if not all_verified:
+            return jsonify({
+                "success": False,
+                "error": "No matching pricing records found for the selected URL(s) and storage filters."
             }), 404
 
-        new_all = engine.build_full_dataset(new_verified, include_grading_matrix=True)
-
-        # Upsert into existing records: update existing by key, or append if new
+        new_all = engine.build_full_dataset(all_verified, include_grading_matrix=include_matrix)
         existing = load_records()
-        existing_map = {
-            (r.get("source_url", ""), r.get("storage", ""), r.get("data_origin", "")): idx
-            for idx, r in enumerate(existing)
-        }
+        scraped_urls = {r.source_url for r in all_verified}
 
-        updated_count = 0
-        added_count = 0
-        now_iso = datetime.now(timezone.utc).isoformat()
+        existing, updated_count, added_count = upsert_records(
+            existing, new_all, include_matrix=include_matrix, target_urls=scraped_urls
+        )
 
-        for rec in new_all:
-            rec_dict = rec.model_dump()
-            rec_dict["timestamp"] = now_iso
-            key = (rec.source_url, rec.storage, rec.data_origin)
-            if key in existing_map:
-                idx = existing_map[key]
-                existing[idx].update(rec_dict)
-                updated_count += 1
-            else:
-                existing.append(rec_dict)
-                existing_map[key] = len(existing) - 1
-                added_count += 1
-
-        # Persist updated dataset
         save_to_json(existing, OUTPUT_JSON_PATH)
         save_to_csv_raw(existing, OUTPUT_CSV_PATH)
 
-        model_name = new_verified[0].model.split("(")[0].strip() if new_verified else "Device"
-        msg = f"Successfully scraped {model_name}! Updated {updated_count} records with fresh prices and timestamps, added {added_count} new records."
+        model_name = all_verified[0].model.split("(")[0].strip() if len(urls) == 1 else f"{len(urls)} device families"
+        msg = (
+            f"Scraped {model_name} ({len(all_verified)} verified variants)! "
+            f"Updated {updated_count} records, added {added_count} new records."
+        )
 
         return jsonify({
             "success": True,
             "message": msg,
-            "new_records": [r.model_dump() for r in new_verified],
+            "new_records": [r.model_dump() for r in all_verified],
             "total_records": len(existing),
             "updated_count": updated_count,
             "added_count": added_count,
         })
 
     except Exception as exc:
-        logger.exception("Error during single scrape")
+        logger.exception("Error during custom scrape")
         return jsonify({"success": False, "error": str(exc)}), 500
 
 
 @app.route("/api/scrape-all", methods=["POST"])
 def api_scrape_all():
-    """Trigger a full catalog scrape across all configured target devices."""
-    try:
-        scraper = CashifyScraper()
-        engine = GradingEngine()
+    """Trigger a full catalog scrape across all target devices using custom parameters."""
+    data = request.get_json(force=True, silent=True) or {}
+    include_matrix = bool(data.get("include_matrix", True))
+    allowed_storages = data.get("storages") or []
+    timeout = max(5, min(60, int(data.get("timeout", REQUEST_TIMEOUT_SECONDS))))
+    retries = max(1, min(5, int(data.get("retries", MAX_RETRIES))))
+    custom_tiers = build_custom_tiers(data)
 
-        all_verified = []
+    try:
+        scraper = CashifyScraper(timeout=timeout, max_retries=retries)
+        engine = GradingEngine(tiers=custom_tiers)
+
+        all_verified: List[MobilePriceRecord] = []
         errors = []
         for target in TARGET_DEVICES:
             try:
                 extracted = scraper.scrape_url(target["url"])
+                if allowed_storages:
+                    extracted = filter_by_storage(extracted, allowed_storages)
                 all_verified.extend(extracted)
             except Exception as e:
                 errors.append(f"{target['brand']} {target['model_family']}: {e}")
@@ -296,40 +391,23 @@ def api_scrape_all():
         if not all_verified:
             return jsonify({
                 "success": False,
-                "error": "No records scraped from any target. " + "; ".join(errors)
+                "error": "No records scraped matching your filters. " + "; ".join(errors)
             }), 500
 
-        final_records = engine.build_full_dataset(all_verified, include_grading_matrix=True)
-
+        final_records = engine.build_full_dataset(all_verified, include_grading_matrix=include_matrix)
         existing = load_records()
-        existing_map = {
-            (r.get("source_url", ""), r.get("storage", ""), r.get("data_origin", "")): idx
-            for idx, r in enumerate(existing)
-        }
+        scraped_urls = {r.source_url for r in all_verified}
 
-        updated_count = 0
-        added_count = 0
-        now_iso = datetime.now(timezone.utc).isoformat()
-
-        for rec in final_records:
-            rec_dict = rec.model_dump()
-            rec_dict["timestamp"] = now_iso
-            key = (rec.source_url, rec.storage, rec.data_origin)
-            if key in existing_map:
-                idx = existing_map[key]
-                existing[idx].update(rec_dict)
-                updated_count += 1
-            else:
-                existing.append(rec_dict)
-                existing_map[key] = len(existing) - 1
-                added_count += 1
+        existing, updated_count, added_count = upsert_records(
+            existing, final_records, include_matrix=include_matrix, target_urls=scraped_urls
+        )
 
         save_to_json(existing, OUTPUT_JSON_PATH)
         save_to_csv_raw(existing, OUTPUT_CSV_PATH)
 
         return jsonify({
             "success": True,
-            "message": f"Full catalog refreshed! {updated_count} records updated with current prices, {added_count} new added.",
+            "message": f"Full catalog refreshed! {updated_count} updated, {added_count} added.",
             "verified_count": len(all_verified),
             "total_records": len(existing),
             "updated_count": updated_count,
@@ -340,6 +418,35 @@ def api_scrape_all():
     except Exception as exc:
         logger.exception("Error during full scrape")
         return jsonify({"success": False, "error": str(exc)}), 500
+
+
+@app.route("/api/recalculate-grades", methods=["POST"])
+def api_recalculate_grades():
+    """
+    Recalculate simulated condition grades on existing verified records without network scraping.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    include_matrix = bool(data.get("include_matrix", True))
+    custom_tiers = build_custom_tiers(data)
+
+    records = load_records()
+    verified_dicts = [r for r in records if r.get("data_origin") == "verified_scraped"]
+    if not verified_dicts:
+        return jsonify({"success": False, "error": "No verified records available to recalculate."}), 400
+
+    verified_objs = [MobilePriceRecord(**r) for r in verified_dicts]
+    engine = GradingEngine(tiers=custom_tiers)
+    recalculated = engine.build_full_dataset(verified_objs, include_grading_matrix=include_matrix)
+
+    out_dicts = [r.model_dump() for r in recalculated]
+    save_to_json(out_dicts, OUTPUT_JSON_PATH)
+    save_to_csv_raw(out_dicts, OUTPUT_CSV_PATH)
+
+    return jsonify({
+        "success": True,
+        "message": f"Recalculated dataset using Grade B={data.get('grade_b', 88)}%, C={data.get('grade_c', 72)}%, D={data.get('grade_d', 45)}% ({len(out_dicts)} total records).",
+        "total_records": len(out_dicts),
+    })
 
 
 @app.route("/api/records")
@@ -377,7 +484,7 @@ def download_json():
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers (bypassing Pydantic model layer for raw dict I/O)
+# Internal helpers
 # ---------------------------------------------------------------------------
 def save_to_json(records, path: Path):
     """Serialize records (Pydantic or dicts) to JSON."""
@@ -394,7 +501,6 @@ def save_to_json(records, path: Path):
 
 def save_to_csv_raw(records: List[Dict[str, Any]], path: Path):
     """Write raw dicts to CSV."""
-    import csv
     fieldnames = [
         "brand", "model", "storage", "ram", "cores", "camera", "condition", "defects",
         "buyback_price", "currency", "data_origin", "confidence_score",
@@ -408,8 +514,5 @@ def save_to_csv_raw(records: List[Dict[str, Any]], path: Path):
     logger.info("Exported %d records to %s", len(records), path)
 
 
-# ---------------------------------------------------------------------------
-# Entry Point
-# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     app.run(debug=True, host="127.0.0.1", port=5000)
