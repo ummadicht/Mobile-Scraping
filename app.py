@@ -396,7 +396,7 @@ def save_to_csv_raw(records: List[Dict[str, Any]], path: Path):
     """Write raw dicts to CSV."""
     import csv
     fieldnames = [
-        "brand", "model", "storage", "condition", "defects",
+        "brand", "model", "storage", "ram", "cores", "camera", "condition", "defects",
         "buyback_price", "currency", "data_origin", "confidence_score",
         "source_url", "timestamp",
     ]

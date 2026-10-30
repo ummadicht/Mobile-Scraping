@@ -1,21 +1,25 @@
 """
 Data models and schema validation for mobile price intelligence records.
+Includes device technical specifications (RAM, CPU Cores, Cameras) and commercial parameters.
 """
 from datetime import datetime, timezone
-from typing import Literal, Optional
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from typing import Literal, Optional, List, Dict, Any
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class MobilePriceRecord(BaseModel):
-    """Represents a validated mobile pricing record."""
+    """Represents a validated mobile pricing record with specifications and parameters."""
     model_config = ConfigDict(frozen=True)
 
     brand: str = Field(..., description="Device manufacturer, e.g., Apple, Samsung")
-    model: str = Field(..., description="Device model with specifications, e.g., Apple iPhone 13 (4 GB/128 GB)")
+    model: str = Field(..., description="Device model with specifications, e.g., Samsung Galaxy S21 5G (8 GB/256 GB)")
     storage: str = Field(..., description="Storage variant, e.g., 64 GB, 128 GB, 256 GB")
+    ram: Optional[str] = Field(default=None, description="Device RAM, e.g., 4 GB, 8 GB RAM")
+    cores: Optional[str] = Field(default=None, description="Processor core count, e.g., 8, 6")
+    camera: Optional[str] = Field(default=None, description="Camera setup, e.g., 12 MP, 64 MP")
     condition: str = Field(..., description="Device condition description or grade")
     defects: str = Field(..., description="Defects or hardware faults present on device")
-    buyback_price: int = Field(..., ge=0, description="Buyback price in local currency integer value")
+    buyback_price: int = Field(..., ge=0, description="Actual buyback price in local currency integer value")
     source_url: str = Field(..., description="Source URL where the price quote originated")
     timestamp: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat(),

@@ -324,7 +324,19 @@
             </td>
             <td class="px-4 py-3">
               <p class="font-medium text-gray-800 text-sm">{{ rec.model.split('(')[0].strip() }}</p>
-              <p class="text-xs text-gray-400">{{ rec.model.split('(')[1].rstrip(')') if '(' in rec.model else '' }}</p>
+              <div class="flex flex-wrap gap-1 mt-0.5">
+                {% if rec.ram %}
+                <span class="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono border border-slate-200">{{ rec.ram }}</span>
+                {% elif '(' in rec.model and 'GB' in rec.model %}
+                <span class="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono border border-slate-200">{{ rec.model.split('(')[1].rstrip(')') }}</span>
+                {% endif %}
+                {% if rec.cores %}
+                <span class="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-mono border border-indigo-200">{{ rec.cores }} Cores</span>
+                {% endif %}
+                {% if rec.camera %}
+                <span class="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-mono border border-emerald-200">{{ rec.camera }}</span>
+                {% endif %}
+              </div>
             </td>
             <td class="px-4 py-3">
               <span class="bg-gray-100 text-gray-700 text-xs font-bold px-2 py-1 rounded-lg">{{ rec.storage }}</span>

@@ -48,26 +48,24 @@ def test_mobile_price_record_invalid_price():
 
 
 def test_scraper_extract_from_mock_html():
-    """Test extracting variant records from synthetic Next.js RSC payload."""
+    """Test extracting variant record from synthetic HTML with Schema.org itemprop and specifications."""
     scraper = CashifyScraper()
     mock_payload = (
-        'self.__next_f.push([1,"{\\"productList\\":['
-        '{\\"url\\":\\"/sell-old-mobile-phone/used-apple-iphone-13-4-gb-128-gb\\",'
-        '\\"productId\\":33120,\\"productName\\":\\"Apple iPhone 13 (4 GB/128 GB)\\",'
-        '\\"brandName\\":\\"Apple\\",\\"getUpTo\\":53150,\\"variationName\\":\\"128 GB\\"},'
-        '{\\"url\\":\\"/sell-old-mobile-phone/used-apple-iphone-13-4-gb-256-gb\\",'
-        '\\"productId\\":33121,\\"productName\\":\\"Apple iPhone 13 (4 GB/256 GB)\\",'
-        '\\"brandName\\":\\"Apple\\",\\"getUpTo\\":58090,\\"variationName\\":\\"256 GB\\"}'
-        ']}"]);'
+        '<html><body>'
+        '<div itemprop="brand">Samsung</div>'
+        '<img itemprop="image" alt="Samsung Galaxy S21 5G (8 GB/256 GB)" />'
+        '<div itemprop="offers"><span itemprop="price">13280</span><span itemprop="priceCurrency">INR</span></div>'
+        'self.__next_f.push([1,"\\"specifications\\":{\\"storage\\":[{\\"id\\":1338,\\"dval\\":\\"256 GB\\"}],\\"ram\\":[{\\"id\\":832,\\"dval\\":\\"8 GB RAM\\"}],\\"cores\\":[{\\"id\\":839,\\"dval\\":\\"8\\"}],\\"backCamera\\":[{\\"id\\":1267,\\"dval\\":\\"12 MP\\"},{\\"id\\":1899,\\"dval\\":\\"64 MP\\"}]}"]);'
+        '</body></html>'
     )
-    records = scraper.extract_variants_from_html(mock_payload, "https://www.cashify.in/test")
-    assert len(records) == 2
-    assert records[0].brand == "Apple"
-    assert records[0].storage == "128 GB"
-    assert records[0].buyback_price == 53150
-    assert records[0].data_origin == "verified_scraped"
-    assert records[1].storage == "256 GB"
-    assert records[1].buyback_price == 58090
+    rec = scraper.scrape_single_variant_page(mock_payload, "https://www.cashify.in/sell-old-mobile-phone/used-samsung-galaxy-s21-5g-8-gb-256-gb")
+    assert rec is not None
+    assert rec.brand == "Samsung"
+    assert rec.storage == "256 GB"
+    assert rec.ram == "8 GB RAM"
+    assert rec.cores == "8"
+    assert rec.buyback_price == 13280
+    assert rec.data_origin == "verified_scraped"
 
 
 def test_grading_engine_multipliers():
