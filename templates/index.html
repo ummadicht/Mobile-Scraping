@@ -3,93 +3,146 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Mobile Price Intelligence Dashboard</title>
+  <title>Swapup Mobile Price Intelligence Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            brand: { 50:'#eff6ff', 100:'#dbeafe', 500:'#3b82f6', 600:'#2563eb', 700:'#1d4ed8', 900:'#1e3a8a' },
-          }
-        }
-      }
-    }
-  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
   <style>
-    body { background: #f0f4f8; font-family: 'Inter', sans-serif; }
-    .glass { background: rgba(255,255,255,0.92); backdrop-filter: blur(10px); }
-    .brand-badge-apple  { background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; }
+    body { background: #f1f5f9; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    .glass { background: rgba(255,255,255,0.95); backdrop-filter: blur(12px); }
+    .brand-badge-apple  { background:#f1f5f9; color:#1e293b; border:1px solid #cbd5e1; }
     .brand-badge-samsung{ background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
     .origin-verified   { background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
     .origin-simulated  { background:#fef9c3; color:#854d0e; border:1px solid #fde68a; }
-    .grade-a { background:#dcfce7; color:#166534; }
-    .grade-b { background:#dbeafe; color:#1d4ed8; }
-    .grade-c { background:#fef3c7; color:#92400e; }
-    .grade-d { background:#fee2e2; color:#991b1b; }
-    #toast { transition: all 0.3s ease; }
-    .spinner { border:3px solid rgba(59,130,246,.2); border-top-color:#3b82f6; border-radius:50%; animation:spin 0.8s linear infinite; }
+    .grade-a { background:#dcfce7; color:#166534; border:1px solid #86efac; }
+    .grade-b { background:#dbeafe; color:#1d4ed8; border:1px solid #93c5fd; }
+    .grade-c { background:#fef3c7; color:#92400e; border:1px solid #fde047; }
+    .grade-d { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; }
+    .spinner { border:3px solid rgba(59,130,246,.2); border-top-color:#2563eb; border-radius:50%; animation:spin 0.8s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
     .kpi-card { transition: transform 0.15s ease, box-shadow 0.15s ease; }
-    .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.08); }
-    .scrape-btn { transition: all 0.15s ease; }
-    .scrape-btn:active { transform: scale(0.97); }
-    th { position: sticky; top: 0; z-index: 10; }
+    .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.07); }
+    th.sortable { cursor: pointer; user-select: none; position: sticky; top: 0; z-index: 10; }
+    th.sortable:hover { background: #f1f5f9; color: #1d4ed8; }
     .table-row:hover { background:#f8fafc; }
+    input[type="range"] { accent-color: #2563eb; }
     @media(max-width:768px){ .hide-mobile { display:none; } }
   </style>
 </head>
-<body class="min-h-screen">
+<body class="min-h-screen text-slate-800">
 
 <!-- ===== TOP NAVBAR ===== -->
-<nav class="bg-gradient-to-r from-blue-900 to-blue-700 shadow-lg">
+<nav class="bg-gradient-to-r from-slate-900 via-blue-900 to-indigo-900 shadow-lg sticky top-0 z-30">
   <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
     <div class="flex items-center gap-3">
-      <div class="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
-        <i class="fa-solid fa-mobile-screen text-white text-lg"></i>
+      <div class="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center">
+        <i class="fa-solid fa-microchip text-blue-300 text-lg"></i>
       </div>
       <div>
-        <h1 class="text-white font-bold text-lg leading-tight">Mobile Price Intelligence</h1>
-        <p class="text-blue-200 text-xs">Refurbished Buyback Analytics · Powered by Cashify</p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-white font-bold text-lg leading-tight">Mobile Price Intelligence</h1>
+          <span class="bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-bold px-2 py-0.5 rounded-full">v2.0 Interactive</span>
+        </div>
+        <p class="text-blue-200 text-xs">Refurbished Buyback Valuation & Parameter Simulation Engine</p>
       </div>
     </div>
-    <div class="flex items-center gap-2">
-      <span id="last-updated-nav" class="text-blue-200 text-xs hidden sm:block">
-        Last synced: <strong>{{ kpis.last_updated }}</strong>
+    <div class="flex items-center gap-2.5">
+      <span class="text-blue-200 text-xs hidden md:inline-block mr-2">
+        <i class="fa-regular fa-clock mr-1"></i>Last Synced: <strong class="text-white">{{ kpis.last_updated }}</strong>
       </span>
       <a href="/download/csv"
-         class="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-sm px-3 py-1.5 rounded-lg transition font-medium">
-        <i class="fa-solid fa-file-csv text-green-300"></i> CSV
+         class="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white text-xs sm:text-sm px-3 py-2 rounded-xl transition font-medium border border-white/15">
+        <i class="fa-solid fa-file-csv text-emerald-300"></i> Export CSV
       </a>
       <a href="/download/json"
-         class="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-sm px-3 py-1.5 rounded-lg transition font-medium">
-        <i class="fa-solid fa-file-code text-yellow-300"></i> JSON
+         class="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white text-xs sm:text-sm px-3 py-2 rounded-xl transition font-medium border border-white/15">
+        <i class="fa-solid fa-file-code text-amber-300"></i> Export JSON
       </a>
     </div>
   </div>
 </nav>
 
 <!-- ===== TOAST NOTIFICATION ===== -->
-<div id="toast" class="fixed top-4 right-4 z-50 hidden max-w-sm w-full">
-  <div id="toast-inner" class="rounded-xl shadow-xl px-4 py-3 flex items-start gap-3 border">
+<div id="toast" class="fixed top-16 right-4 z-50 hidden max-w-md w-full">
+  <div id="toast-inner" class="rounded-2xl shadow-2xl px-4 py-3.5 flex items-start gap-3 border">
     <div id="toast-icon" class="text-xl mt-0.5"></div>
     <div class="flex-1 min-w-0">
-      <p id="toast-title" class="font-semibold text-sm"></p>
-      <p id="toast-msg" class="text-xs mt-0.5 opacity-80 break-words"></p>
+      <p id="toast-title" class="font-bold text-sm"></p>
+      <p id="toast-msg" class="text-xs mt-0.5 opacity-90 break-words"></p>
     </div>
-    <button onclick="hideToast()" class="text-gray-400 hover:text-gray-600 ml-1 mt-0.5">
+    <button onclick="hideToast()" class="text-gray-400 hover:text-gray-600 ml-1">
       <i class="fa-solid fa-xmark"></i>
     </button>
   </div>
 </div>
 
 <!-- ===== LOADING OVERLAY ===== -->
-<div id="loading-overlay" class="fixed inset-0 bg-blue-900/60 z-40 hidden flex items-center justify-center">
-  <div class="glass rounded-2xl px-10 py-8 flex flex-col items-center gap-4 shadow-2xl">
+<div id="loading-overlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 hidden items-center justify-center">
+  <div class="glass rounded-2xl px-10 py-8 flex flex-col items-center gap-4 shadow-2xl max-w-sm text-center">
     <div class="spinner w-12 h-12"></div>
-    <p id="loading-msg" class="text-blue-900 font-semibold text-sm">Scraping live data…</p>
-    <p class="text-gray-500 text-xs">This may take 10–30 seconds</p>
+    <p id="loading-msg" class="text-slate-900 font-bold text-base">Scraping live data…</p>
+    <p id="loading-submsg" class="text-slate-500 text-xs">Applying custom parameters & extracting RSC specs…</p>
+  </div>
+</div>
+
+<!-- ===== INTERACTIVE VALUATION SIMULATOR MODAL ===== -->
+<div id="simulator-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
+    <div class="bg-gradient-to-r from-blue-900 to-indigo-800 px-6 py-4 flex items-center justify-between text-white">
+      <div class="flex items-center gap-2.5">
+        <i class="fa-solid fa-calculator text-blue-300 text-lg"></i>
+        <div>
+          <h3 class="font-bold text-base">Interactive Defect & Buyback Simulator</h3>
+          <p id="sim-device-title" class="text-xs text-blue-200">Select defects to model custom price deduction</p>
+        </div>
+      </div>
+      <button onclick="closeSimulatorModal()" class="text-blue-200 hover:text-white">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+    <div class="p-6 space-y-4">
+      <div class="flex items-center justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+        <div>
+          <span class="text-xs text-slate-500 uppercase font-semibold">Verified Flawless Baseline (Grade A)</span>
+          <p id="sim-base-price" class="text-xl font-bold text-slate-800">₹0</p>
+        </div>
+        <div class="text-right">
+          <span class="text-xs text-blue-600 uppercase font-bold">Simulated Buyback Quote</span>
+          <p id="sim-final-price" class="text-2xl font-extrabold text-blue-700">₹0</p>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-bold text-slate-600 uppercase mb-2">Toggle Hardware & Cosmetic Defects:</label>
+        <div class="space-y-2">
+          <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer">
+            <span class="text-sm font-medium text-slate-700">Minor Hairline Scratches (Body/Frame)</span>
+            <input type="checkbox" class="sim-defect-cb w-4 h-4 text-blue-600" data-penalty="12" onchange="updateModalSimulation()"/>
+          </label>
+          <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer">
+            <span class="text-sm font-medium text-slate-700">Degraded Battery Health (&lt; 80%)</span>
+            <input type="checkbox" class="sim-defect-cb w-4 h-4 text-blue-600" data-penalty="10" onchange="updateModalSimulation()"/>
+          </label>
+          <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer">
+            <span class="text-sm font-medium text-slate-700">Heavy Dents / Paint Peel on Casing</span>
+            <input type="checkbox" class="sim-defect-cb w-4 h-4 text-blue-600" data-penalty="16" onchange="updateModalSimulation()"/>
+          </label>
+          <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer">
+            <span class="text-sm font-medium text-slate-700">Rear Camera / FaceID / Sensor Issue</span>
+            <input type="checkbox" class="sim-defect-cb w-4 h-4 text-blue-600" data-penalty="25" onchange="updateModalSimulation()"/>
+          </label>
+          <label class="flex items-center justify-between p-2.5 rounded-xl border border-red-200 bg-red-50/40 hover:bg-red-50 cursor-pointer">
+            <span class="text-sm font-semibold text-red-800">Cracked Front Glass / Display Defect (-55%)</span>
+            <input type="checkbox" class="sim-defect-cb w-4 h-4 text-red-600" data-penalty="55" onchange="updateModalSimulation()"/>
+          </label>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between text-xs text-slate-500 pt-2 border-t">
+        <span id="sim-retention-label">Value Retained: <strong>100%</strong></span>
+        <button onclick="closeSimulatorModal()" class="bg-slate-800 hover:bg-slate-900 text-white font-semibold px-4 py-2 rounded-xl">Done</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -97,238 +150,376 @@
 
   <!-- ===== KPI CARDS ===== -->
   <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-
-    <div class="kpi-card glass rounded-2xl p-4 shadow border border-white col-span-1">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-xs text-gray-500 font-medium uppercase tracking-wide">Total Records</span>
-        <div class="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
-          <i class="fa-solid fa-database text-blue-600 text-xs"></i>
-        </div>
+    <div class="kpi-card glass rounded-2xl p-4 shadow-sm border border-white">
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Total Dataset</span>
+        <div class="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center"><i class="fa-solid fa-database text-blue-600 text-xs"></i></div>
       </div>
-      <p id="kpi-total" class="text-3xl font-bold text-gray-800">{{ kpis.total_records }}</p>
-      <p class="text-xs text-gray-400 mt-1">All pricing records</p>
+      <p id="kpi-total" class="text-2xl font-extrabold text-slate-800">{{ kpis.total_records }}</p>
+      <p class="text-[11px] text-slate-400 mt-1">Deduplicated records</p>
     </div>
 
-    <div class="kpi-card glass rounded-2xl p-4 shadow border border-white col-span-1">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-xs text-gray-500 font-medium uppercase tracking-wide">Verified Live</span>
-        <div class="w-7 h-7 rounded-lg bg-green-100 flex items-center justify-center">
-          <i class="fa-solid fa-circle-check text-green-600 text-xs"></i>
-        </div>
+    <div class="kpi-card glass rounded-2xl p-4 shadow-sm border border-white">
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Verified Live</span>
+        <div class="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center"><i class="fa-solid fa-circle-check text-emerald-600 text-xs"></i></div>
       </div>
-      <p id="kpi-verified" class="text-3xl font-bold text-green-700">{{ kpis.verified_count }}</p>
-      <p class="text-xs text-gray-400 mt-1">Cashify live quotes</p>
+      <p id="kpi-verified" class="text-2xl font-extrabold text-emerald-700">{{ kpis.verified_count }}</p>
+      <p class="text-[11px] text-slate-400 mt-1">Cashify Grade A quotes</p>
     </div>
 
-    <div class="kpi-card glass rounded-2xl p-4 shadow border border-white col-span-1">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-xs text-gray-500 font-medium uppercase tracking-wide">Avg Buyback</span>
-        <div class="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center">
-          <i class="fa-solid fa-indian-rupee-sign text-purple-600 text-xs"></i>
-        </div>
+    <div class="kpi-card glass rounded-2xl p-4 shadow-sm border border-white">
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Avg Buyback</span>
+        <div class="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center"><i class="fa-solid fa-indian-rupee-sign text-indigo-600 text-xs"></i></div>
       </div>
-      <p id="kpi-avg" class="text-3xl font-bold text-purple-700">₹{{ '{:,}'.format(kpis.avg_price) }}</p>
-      <p class="text-xs text-gray-400 mt-1">Across verified records</p>
+      <p id="kpi-avg" class="text-2xl font-extrabold text-indigo-700">₹{{ '{:,}'.format(kpis.avg_price) }}</p>
+      <p class="text-[11px] text-slate-400 mt-1">Verified baseline mean</p>
     </div>
 
-    <div class="kpi-card glass rounded-2xl p-4 shadow border border-white col-span-1">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-xs text-gray-500 font-medium uppercase tracking-wide">Highest Quote</span>
-        <div class="w-7 h-7 rounded-lg bg-yellow-100 flex items-center justify-center">
-          <i class="fa-solid fa-trophy text-yellow-600 text-xs"></i>
-        </div>
+    <div class="kpi-card glass rounded-2xl p-4 shadow-sm border border-white">
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Highest Quote</span>
+        <div class="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center"><i class="fa-solid fa-trophy text-amber-600 text-xs"></i></div>
       </div>
-      <p id="kpi-max" class="text-3xl font-bold text-yellow-700">₹{{ '{:,}'.format(kpis.max_price) }}</p>
-      <p id="kpi-max-device" class="text-xs text-gray-400 mt-1 truncate" title="{{ kpis.max_device }}">{{ kpis.max_device.split('(')[0].strip() }}</p>
+      <p id="kpi-max" class="text-2xl font-extrabold text-amber-700">₹{{ '{:,}'.format(kpis.max_price) }}</p>
+      <p class="text-[11px] text-slate-400 mt-1 truncate" title="{{ kpis.max_device }}">{{ kpis.max_device.split('(')[0].strip() }}</p>
     </div>
 
-    <div class="kpi-card glass rounded-2xl p-4 shadow border border-white col-span-1">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-xs text-gray-500 font-medium uppercase tracking-wide">Lowest Quote</span>
-        <div class="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center">
-          <i class="fa-solid fa-arrow-trend-down text-red-500 text-xs"></i>
-        </div>
+    <div class="kpi-card glass rounded-2xl p-4 shadow-sm border border-white">
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Lowest Quote</span>
+        <div class="w-7 h-7 rounded-lg bg-rose-100 flex items-center justify-center"><i class="fa-solid fa-arrow-trend-down text-rose-500 text-xs"></i></div>
       </div>
-      <p id="kpi-min" class="text-3xl font-bold text-red-600">₹{{ '{:,}'.format(kpis.min_price) }}</p>
-      <p id="kpi-min-device" class="text-xs text-gray-400 mt-1 truncate" title="{{ kpis.min_device }}">{{ kpis.min_device.split('(')[0].strip() }}</p>
+      <p id="kpi-min" class="text-2xl font-extrabold text-rose-600">₹{{ '{:,}'.format(kpis.min_price) }}</p>
+      <p class="text-[11px] text-slate-400 mt-1 truncate" title="{{ kpis.min_device }}">{{ kpis.min_device.split('(')[0].strip() }}</p>
     </div>
 
-    <div class="kpi-card glass rounded-2xl p-4 shadow border border-white col-span-1">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-xs text-gray-500 font-medium uppercase tracking-wide">Brands</span>
-        <div class="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
-          <i class="fa-solid fa-tags text-slate-600 text-xs"></i>
-        </div>
+    <div class="kpi-card glass rounded-2xl p-4 shadow-sm border border-white">
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Filtered Mean</span>
+        <div class="w-7 h-7 rounded-lg bg-cyan-100 flex items-center justify-center"><i class="fa-solid fa-filter text-cyan-600 text-xs"></i></div>
       </div>
-      <p id="kpi-brands" class="text-3xl font-bold text-gray-800">{{ kpis.brands_tracked }}</p>
-      <p class="text-xs text-gray-400 mt-1">Brands tracked</p>
+      <p id="kpi-filtered-avg" class="text-2xl font-extrabold text-cyan-700">₹{{ '{:,}'.format(kpis.avg_price) }}</p>
+      <p class="text-[11px] text-slate-400 mt-1">Updates with table filter</p>
     </div>
-
   </section>
 
-  <!-- ===== SCRAPING CONTROL PANEL ===== -->
-  <section class="glass rounded-2xl shadow border border-white p-5">
-    <div class="flex items-center gap-2 mb-4">
-      <i class="fa-solid fa-satellite-dish text-blue-600"></i>
-      <h2 class="font-bold text-gray-800 text-base">Scraping Control Panel</h2>
-      <span class="ml-2 text-xs text-gray-400 font-normal">Select a device or enter a custom URL to scrape live prices</span>
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-      <!-- Quick Device Cards -->
-      <div class="lg:col-span-1">
-        <label class="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
-          <i class="fa-solid fa-mobile-screen-button mr-1"></i> Quick Select Device
-        </label>
-        <div class="grid grid-cols-1 gap-2">
-          {% for device in target_devices %}
-          <button onclick="selectDevice('{{ device.url }}', this)"
-                  class="device-card text-left px-3 py-2.5 rounded-xl border-2 border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition flex items-center gap-3 group">
-            {% if device.brand == 'Apple' %}
-              <div class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center group-hover:bg-blue-100 transition">
-                <i class="fa-brands fa-apple text-gray-700 text-base group-hover:text-blue-700"></i>
-              </div>
-            {% else %}
-              <div class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 transition">
-                <i class="fa-solid fa-mobile text-blue-600 text-sm"></i>
-              </div>
-            {% endif %}
-            <div class="min-w-0">
-              <p class="font-semibold text-sm text-gray-800 truncate">{{ device.brand }}</p>
-              <p class="text-xs text-gray-500 truncate">{{ device.model_family }}</p>
-            </div>
-          </button>
-          {% endfor %}
+  <!-- ===== INTERACTIVE SCRAPE & PARAMETER STUDIO ===== -->
+  <section class="glass rounded-2xl shadow-sm border border-white p-5">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-4 border-b border-slate-100">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center">
+          <i class="fa-solid fa-sliders"></i>
+        </div>
+        <div>
+          <h2 class="font-bold text-slate-800 text-base">Interactive Scrape & Parameter Studio</h2>
+          <p class="text-xs text-slate-500">Select target devices, storage capacities, condition grading multipliers, and HTTP parameters</p>
         </div>
       </div>
+      <button onclick="resetScrapeParameters()" class="text-xs text-blue-600 hover:text-blue-800 font-semibold self-start sm:self-auto">
+        <i class="fa-solid fa-rotate-left mr-1"></i>Reset Default Parameters
+      </button>
+    </div>
 
-      <!-- Custom URL Input + Action -->
-      <div class="lg:col-span-2 flex flex-col gap-3">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Column 1: Target Selection (5 cols) -->
+      <div class="lg:col-span-5 flex flex-col justify-between space-y-4">
         <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
-            <i class="fa-solid fa-link mr-1"></i> Cashify Device URL
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-xs font-bold text-slate-600 uppercase tracking-wide">
+              1. Select Target Device(s)
+            </label>
+            <button onclick="toggleSelectAllDevices()" class="text-[11px] text-blue-600 hover:underline font-medium">Select / Deselect All</button>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+            {% for device in target_devices %}
+            <div onclick="toggleDeviceCard(this, '{{ device.url }}')"
+                 data-url="{{ device.url }}"
+                 class="device-card cursor-pointer px-3 py-2 rounded-xl border-2 border-slate-200 hover:border-blue-400 transition flex items-center gap-2.5 select-none">
+              <input type="checkbox" class="device-cb pointer-events-none w-4 h-4 accent-blue-600 rounded" value="{{ device.url }}"/>
+              {% if device.brand == 'Apple' %}
+                <i class="fa-brands fa-apple text-slate-700 text-base"></i>
+              {% else %}
+                <i class="fa-solid fa-mobile-screen text-blue-600 text-sm"></i>
+              {% endif %}
+              <div class="min-w-0 flex-1">
+                <p class="font-bold text-xs text-slate-800 truncate">{{ device.model_family }}</p>
+                <p class="text-[10px] text-slate-400 truncate">{{ device.brand }}</p>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Custom URL Input -->
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">
+            Or Enter Custom Cashify URL
           </label>
           <div class="flex gap-2">
             <input id="custom-url-input" type="url"
-                   placeholder="https://www.cashify.in/sell-old-mobile-phone/used-apple-iphone-12"
-                   class="flex-1 px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition font-mono text-gray-700"/>
-            <button onclick="clearUrl()"
-                    class="px-3 py-2.5 border-2 border-gray-200 rounded-xl hover:bg-gray-100 transition text-gray-500 hover:text-gray-700" title="Clear">
+                   placeholder="https://www.cashify.in/sell-old-mobile-phone/used-apple-iphone-15"
+                   class="flex-1 px-3 py-2 border-2 border-slate-200 rounded-xl text-xs focus:outline-none focus:border-blue-500 font-mono text-slate-700"/>
+            <button onclick="clearUrl()" class="px-3 py-2 border-2 border-slate-200 rounded-xl hover:bg-slate-100 text-slate-500" title="Clear">
               <i class="fa-solid fa-xmark"></i>
             </button>
           </div>
-          <p class="text-xs text-gray-400 mt-1">Only <code>cashify.in/sell-old-mobile-phone/</code> URLs are supported</p>
         </div>
-
-        <div class="flex flex-col sm:flex-row gap-3 mt-auto">
-          <button onclick="scrapeSingle()"
-                  class="scrape-btn flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold py-3 px-5 rounded-xl text-sm shadow transition">
-            <i class="fa-solid fa-bolt"></i>
-            Scrape Selected Device
-          </button>
-          <button onclick="scrapeAll()"
-                  class="scrape-btn flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-blue-700 to-blue-500 hover:from-blue-800 hover:to-blue-600 text-white font-semibold py-3 px-5 rounded-xl text-sm shadow transition">
-            <i class="fa-solid fa-rotate"></i>
-            Refresh All Devices
-          </button>
-        </div>
-
-        <!-- Status indicator -->
-        <div id="scrape-status" class="hidden rounded-xl px-4 py-3 text-sm border"></div>
       </div>
 
+      <!-- Column 2: Scrape Parameters & Filters (4 cols) -->
+      <div class="lg:col-span-4 space-y-4 bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80">
+        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wide">
+          2. Scrape Parameters & Storage Filter
+        </label>
+
+        <!-- Storage Variant Checkboxes -->
+        <div>
+          <span class="text-xs font-medium text-slate-600 block mb-1.5">Allowed Storage Capacities:</span>
+          <div class="flex flex-wrap gap-2">
+            {% for cap in ['64 GB', '128 GB', '256 GB', '512 GB', '1 TB'] %}
+            <label class="inline-flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 cursor-pointer hover:border-blue-400">
+              <input type="checkbox" class="storage-param-cb accent-blue-600" value="{{ cap }}" checked/>
+              {{ cap }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Mode Toggle: Include Simulated Matrix -->
+        <div class="pt-1">
+          <label class="flex items-center justify-between cursor-pointer bg-white p-2.5 rounded-xl border border-slate-200">
+            <div>
+              <span class="text-xs font-bold text-slate-700 block">Generate Condition Matrix (B/C/D)</span>
+              <span class="text-[11px] text-slate-400">Uncheck for `--live-only` verified quotes</span>
+            </div>
+            <input id="param-include-matrix" type="checkbox" class="w-5 h-5 accent-blue-600 rounded" checked/>
+          </label>
+        </div>
+
+        <!-- Network Parameters -->
+        <div class="grid grid-cols-2 gap-3 pt-1">
+          <div>
+            <label class="text-[11px] font-bold text-slate-500 uppercase block mb-1">HTTP Timeout (s)</label>
+            <input id="param-timeout" type="number" min="5" max="60" value="15"
+                   class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"/>
+          </div>
+          <div>
+            <label class="text-[11px] font-bold text-slate-500 uppercase block mb-1">Max Retries</label>
+            <input id="param-retries" type="number" min="1" max="5" value="3"
+                   class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"/>
+          </div>
+        </div>
+      </div>
+
+      <!-- Column 3: Condition Grading Multipliers & Actions (3 cols) -->
+      <div class="lg:col-span-3 flex flex-col justify-between bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-bold text-blue-900 uppercase tracking-wide">
+              3. Grading Multipliers
+            </label>
+            <span class="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded">% of Grade A</span>
+          </div>
+
+          <!-- Grade B Slider -->
+          <div>
+            <div class="flex justify-between text-xs font-semibold mb-0.5">
+              <span class="text-slate-700">Grade B (Good)</span>
+              <span id="val-grade-b" class="text-blue-700 font-bold">88%</span>
+            </div>
+            <input id="slider-grade-b" type="range" min="50" max="98" value="88"
+                   oninput="document.getElementById('val-grade-b').textContent = this.value + '%'"
+                   class="w-full h-1.5 bg-blue-200 rounded-lg cursor-pointer"/>
+          </div>
+
+          <!-- Grade C Slider -->
+          <div>
+            <div class="flex justify-between text-xs font-semibold mb-0.5">
+              <span class="text-slate-700">Grade C (Fair)</span>
+              <span id="val-grade-c" class="text-amber-700 font-bold">72%</span>
+            </div>
+            <input id="slider-grade-c" type="range" min="35" max="85" value="72"
+                   oninput="document.getElementById('val-grade-c').textContent = this.value + '%'"
+                   class="w-full h-1.5 bg-amber-200 rounded-lg cursor-pointer"/>
+          </div>
+
+          <!-- Grade D Slider -->
+          <div>
+            <div class="flex justify-between text-xs font-semibold mb-0.5">
+              <span class="text-slate-700">Grade D (Broken)</span>
+              <span id="val-grade-d" class="text-rose-700 font-bold">45%</span>
+            </div>
+            <input id="slider-grade-d" type="range" min="10" max="65" value="45"
+                   oninput="document.getElementById('val-grade-d').textContent = this.value + '%'"
+                   class="w-full h-1.5 bg-rose-200 rounded-lg cursor-pointer"/>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="space-y-2 pt-4">
+          <button onclick="scrapeSelected()"
+                  class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-sm transition">
+            <i class="fa-solid fa-bolt"></i> Scrape Selected w/ Params
+          </button>
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="recalculateGradesOnly()"
+                    title="Apply multiplier sliders to current dataset without network scraping"
+                    class="flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-3 rounded-xl text-xs transition">
+              <i class="fa-solid fa-calculator"></i> Recalculate
+            </button>
+            <button onclick="scrapeAll()"
+                    class="flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white font-semibold py-2 px-3 rounded-xl text-xs transition">
+              <i class="fa-solid fa-rotate"></i> Scrape All
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===== INTERACTIVE CHARTS PANEL ===== -->
+  <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="glass rounded-2xl shadow-sm border border-white p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+          <i class="fa-solid fa-chart-column text-blue-600"></i>
+          Verified Baseline Valuation by Model & Storage
+        </h3>
+        <span class="text-[11px] text-slate-400">Dynamic Chart.js</span>
+      </div>
+      <div class="h-64">
+        <canvas id="modelBarChart"></canvas>
+      </div>
+    </div>
+
+    <div class="glass rounded-2xl shadow-sm border border-white p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+          <i class="fa-solid fa-chart-line text-indigo-600"></i>
+          Average Price Erosion Across Condition Grades
+        </h3>
+        <span class="text-[11px] text-slate-400">Updates with table filters</span>
+      </div>
+      <div class="h-64">
+        <canvas id="gradeCurveChart"></canvas>
+      </div>
     </div>
   </section>
 
   <!-- ===== DATA TABLE ===== -->
-  <section class="glass rounded-2xl shadow border border-white overflow-hidden">
+  <section class="glass rounded-2xl shadow-sm border border-white overflow-hidden">
 
-    <!-- Table Header Toolbar -->
-    <div class="px-5 py-4 border-b border-gray-100 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-      <div class="flex items-center gap-2 flex-1">
-        <i class="fa-solid fa-table text-blue-600"></i>
-        <h2 class="font-bold text-gray-800 text-base">Pricing Intelligence Table</h2>
-        <span id="record-count-badge" class="ml-1 bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">
+    <!-- Table Filter Toolbar -->
+    <div class="px-5 py-4 border-b border-slate-100 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-3">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-table-list text-blue-600"></i>
+        <h2 class="font-bold text-slate-800 text-base">Pricing Intelligence Matrix</h2>
+        <span id="record-count-badge" class="bg-blue-100 text-blue-700 text-xs font-bold px-2.5 py-0.5 rounded-full">
           {{ records|length }} records
         </span>
       </div>
-      <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+
+      <div class="flex flex-wrap items-center gap-2.5 w-full xl:w-auto">
         <!-- Search -->
-        <div class="relative">
-          <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
-          <input id="search-input" type="text" placeholder="Search model…"
+        <div class="relative flex-1 sm:flex-initial">
+          <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+          <input id="search-input" type="text" placeholder="Search model or defect…"
                  oninput="filterTable()"
-                 class="pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 w-40"/>
+                 class="pl-8 pr-3 py-1.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-blue-500 w-full sm:w-44 bg-white"/>
         </div>
+
         <!-- Brand Filter -->
         <select id="filter-brand" onchange="filterTable()"
-                class="py-2 pl-3 pr-7 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white">
+                class="py-1.5 pl-3 pr-7 border border-slate-200 rounded-xl text-xs bg-white font-medium">
           <option value="">All Brands</option>
           <option value="Apple">Apple</option>
           <option value="Samsung">Samsung</option>
         </select>
+
+        <!-- Storage Filter -->
+        <select id="filter-storage" onchange="filterTable()"
+                class="py-1.5 pl-3 pr-7 border border-slate-200 rounded-xl text-xs bg-white font-medium">
+          <option value="">All Storages</option>
+          <option value="64 GB">64 GB</option>
+          <option value="128 GB">128 GB</option>
+          <option value="256 GB">256 GB</option>
+          <option value="512 GB">512 GB</option>
+        </select>
+
         <!-- Origin Filter -->
         <select id="filter-origin" onchange="filterTable()"
-                class="py-2 pl-3 pr-7 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white">
+                class="py-1.5 pl-3 pr-7 border border-slate-200 rounded-xl text-xs bg-white font-medium">
           <option value="">All Origins</option>
-          <option value="verified_scraped">Verified Only</option>
-          <option value="sample_condition_graded">Simulated Only</option>
+          <option value="verified_scraped">Verified Live Only</option>
+          <option value="sample_condition_graded">Simulated Matrix Only</option>
         </select>
+
         <!-- Grade Filter -->
         <select id="filter-grade" onchange="filterTable()"
-                class="py-2 pl-3 pr-7 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white">
+                class="py-1.5 pl-3 pr-7 border border-slate-200 rounded-xl text-xs bg-white font-medium">
           <option value="">All Grades</option>
           <option value="Grade A">Grade A</option>
           <option value="Grade B">Grade B</option>
           <option value="Grade C">Grade C</option>
           <option value="Grade D">Grade D</option>
         </select>
+
+        <!-- Max Price Range Filter -->
+        <div class="flex items-center gap-2 bg-slate-50 px-3 py-1 rounded-xl border border-slate-200">
+          <span class="text-[11px] font-semibold text-slate-500">Max: <strong id="price-filter-label" class="text-slate-800">₹70,000</strong></span>
+          <input id="filter-max-price" type="range" min="5000" max="70000" step="1000" value="70000"
+                 oninput="document.getElementById('price-filter-label').textContent = '₹' + Number(this.value).toLocaleString('en-IN'); filterTable();"
+                 class="w-24 h-1.5"/>
+        </div>
       </div>
     </div>
 
     <!-- Table -->
-    <div class="overflow-x-auto">
+    <div class="overflow-x-auto max-h-[540px]">
       <table class="w-full text-sm" id="pricing-table">
-        <thead class="bg-gray-50 border-b border-gray-200">
+        <thead class="bg-slate-50 border-b border-slate-200">
           <tr>
-            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Brand</th>
-            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Model</th>
-            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Storage</th>
-            <th class="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Buyback Price</th>
-            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Grade</th>
-            <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hide-mobile">Defects</th>
-            <th class="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Origin</th>
-            <th class="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Scraped At</th>
-            <th class="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hide-mobile">Source</th>
+            <th onclick="sortTable('brand')" class="sortable text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase">Brand <i class="fa-solid fa-sort ml-1 opacity-40"></i></th>
+            <th onclick="sortTable('model')" class="sortable text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase">Model & Specs <i class="fa-solid fa-sort ml-1 opacity-40"></i></th>
+            <th onclick="sortTable('storage')" class="sortable text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase">Storage <i class="fa-solid fa-sort ml-1 opacity-40"></i></th>
+            <th onclick="sortTable('price')" class="sortable text-right px-4 py-3 text-xs font-bold text-slate-500 uppercase">Buyback Price <i class="fa-solid fa-sort ml-1 opacity-40"></i></th>
+            <th onclick="sortTable('grade')" class="sortable text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase">Grade <i class="fa-solid fa-sort ml-1 opacity-40"></i></th>
+            <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase hide-mobile">Defects</th>
+            <th class="text-center px-4 py-3 text-xs font-bold text-slate-500 uppercase">Origin</th>
+            <th class="text-center px-4 py-3 text-xs font-bold text-slate-500 uppercase">Actions</th>
           </tr>
         </thead>
         <tbody id="table-body">
           {% for rec in records %}
           {% set grade_letter = 'A' if 'Grade A' in rec.condition else ('B' if 'Grade B' in rec.condition else ('C' if 'Grade C' in rec.condition else 'D')) %}
-          <tr class="table-row border-b border-gray-50 transition"
+          <tr class="table-row border-b border-slate-100 transition"
               data-brand="{{ rec.brand }}"
               data-model="{{ rec.model }}"
+              data-storage="{{ rec.storage }}"
+              data-price="{{ rec.buyback_price }}"
               data-origin="{{ rec.data_origin }}"
-              data-grade="{{ 'Grade ' + grade_letter }}">
+              data-grade="{{ 'Grade ' + grade_letter }}"
+              data-defects="{{ rec.defects }}">
             <td class="px-4 py-3">
               {% if rec.brand == 'Apple' %}
-              <span class="brand-badge-apple text-xs font-semibold px-2 py-1 rounded-lg inline-flex items-center gap-1">
-                <i class="fa-brands fa-apple text-xs"></i> Apple
+              <span class="brand-badge-apple text-xs font-semibold px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                <i class="fa-brands fa-apple"></i> Apple
               </span>
               {% else %}
-              <span class="brand-badge-samsung text-xs font-semibold px-2 py-1 rounded-lg inline-flex items-center gap-1">
-                <i class="fa-solid fa-s text-xs"></i> Samsung
+              <span class="brand-badge-samsung text-xs font-semibold px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                <i class="fa-solid fa-mobile-screen"></i> Samsung
               </span>
               {% endif %}
             </td>
             <td class="px-4 py-3">
-              <p class="font-medium text-gray-800 text-sm">{{ rec.model.split('(')[0].strip() }}</p>
+              <p class="font-bold text-slate-800 text-sm">{{ rec.model.split('(')[0].strip() }}</p>
               <div class="flex flex-wrap gap-1 mt-0.5">
                 {% if rec.ram %}
                 <span class="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono border border-slate-200">{{ rec.ram }}</span>
-                {% elif '(' in rec.model and 'GB' in rec.model %}
-                <span class="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono border border-slate-200">{{ rec.model.split('(')[1].rstrip(')') }}</span>
                 {% endif %}
                 {% if rec.cores %}
                 <span class="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-mono border border-indigo-200">{{ rec.cores }} Cores</span>
@@ -339,55 +530,42 @@
               </div>
             </td>
             <td class="px-4 py-3">
-              <span class="bg-gray-100 text-gray-700 text-xs font-bold px-2 py-1 rounded-lg">{{ rec.storage }}</span>
+              <span class="bg-slate-100 text-slate-700 text-xs font-bold px-2.5 py-1 rounded-lg">{{ rec.storage }}</span>
             </td>
             <td class="px-4 py-3 text-right">
-              <span class="font-bold text-gray-900 text-base">₹{{ '{:,}'.format(rec.buyback_price) }}</span>
-              <p class="text-xs text-gray-400">INR</p>
+              <span class="font-extrabold text-slate-900 text-base">₹{{ '{:,}'.format(rec.buyback_price) }}</span>
+              <p class="text-[10px] text-slate-400">INR</p>
             </td>
             <td class="px-4 py-3">
-              {% if grade_letter == 'A' %}
-              <span class="grade-a text-xs font-bold px-2 py-1 rounded-lg">Grade A</span>
-              {% elif grade_letter == 'B' %}
-              <span class="grade-b text-xs font-bold px-2 py-1 rounded-lg">Grade B</span>
-              {% elif grade_letter == 'C' %}
-              <span class="grade-c text-xs font-bold px-2 py-1 rounded-lg">Grade C</span>
-              {% else %}
-              <span class="grade-d text-xs font-bold px-2 py-1 rounded-lg">Grade D</span>
-              {% endif %}
+              <span class="grade-{{ grade_letter|lower }} text-xs font-bold px-2.5 py-1 rounded-lg">Grade {{ grade_letter }}</span>
             </td>
             <td class="px-4 py-3 hide-mobile">
-              <p class="text-xs text-gray-600 max-w-xs truncate" title="{{ rec.defects }}">{{ rec.defects }}</p>
+              <p class="text-xs text-slate-600 max-w-xs truncate" title="{{ rec.defects }}">{{ rec.defects }}</p>
             </td>
             <td class="px-4 py-3 text-center">
               {% if rec.data_origin == 'verified_scraped' %}
-              <span class="origin-verified text-xs font-bold px-2 py-1 rounded-full inline-flex items-center gap-1">
-                <i class="fa-solid fa-circle-check text-xs"></i> Verified
+              <span class="origin-verified text-[11px] font-bold px-2.5 py-1 rounded-full inline-flex items-center gap-1">
+                <i class="fa-solid fa-circle-check"></i> Verified
               </span>
               {% else %}
-              <span class="origin-simulated text-xs font-bold px-2 py-1 rounded-full inline-flex items-center gap-1">
-                <i class="fa-solid fa-flask-vial text-xs"></i> Simulated
+              <span class="origin-simulated text-[11px] font-bold px-2.5 py-1 rounded-full inline-flex items-center gap-1">
+                <i class="fa-solid fa-flask"></i> Simulated
               </span>
               {% endif %}
             </td>
             <td class="px-4 py-3 text-center">
-              <span class="text-xs text-gray-500 font-mono bg-gray-100 px-2 py-1 rounded">
-                {{ rec.timestamp[11:19] if rec.timestamp and rec.timestamp|length >= 19 else 'Recent' }}
-              </span>
-            </td>
-            <td class="px-4 py-3 text-center hide-mobile">
-              <a href="{{ rec.source_url }}" target="_blank" rel="noopener"
-                 class="text-blue-500 hover:text-blue-700 transition" title="{{ rec.source_url }}">
-                <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
-              </a>
-            </td>
-          </tr>
-          {% else %}
-          <tr>
-            <td colspan="9" class="text-center py-16 text-gray-400">
-              <i class="fa-solid fa-database text-4xl mb-3 block opacity-20"></i>
-              <p class="font-medium">No records yet.</p>
-              <p class="text-xs mt-1">Use the Scraping Control Panel above to collect live pricing data.</p>
+              <div class="flex items-center justify-center gap-2">
+                <button onclick="openSimulatorModal('{{ rec.model }}', {{ rec.buyback_price }}, '{{ grade_letter }}')"
+                        class="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-2.5 py-1 rounded-lg border border-blue-200 transition"
+                        title="Simulate custom defects for this model">
+                  <i class="fa-solid fa-calculator"></i>
+                </button>
+                <a href="{{ rec.source_url }}" target="_blank" rel="noopener"
+                   class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg transition"
+                   title="View live Cashify page">
+                  <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                </a>
+              </div>
             </td>
           </tr>
           {% endfor %}
@@ -396,194 +574,364 @@
     </div>
 
     <!-- Table Footer -->
-    <div class="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
-      <p id="visible-count" class="text-xs text-gray-400"></p>
-      <div class="flex gap-3">
-        <a href="/download/csv"
-           class="flex items-center gap-1.5 text-xs text-green-700 font-semibold bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg transition border border-green-200">
-          <i class="fa-solid fa-file-csv"></i> Download CSV
-        </a>
-        <a href="/download/json"
-           class="flex items-center gap-1.5 text-xs text-yellow-700 font-semibold bg-yellow-50 hover:bg-yellow-100 px-3 py-1.5 rounded-lg transition border border-yellow-200">
-          <i class="fa-solid fa-file-code"></i> Download JSON
-        </a>
-      </div>
+    <div class="px-5 py-3 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between">
+      <p id="visible-count" class="text-xs font-medium text-slate-500"></p>
+      <p class="text-xs text-slate-400">Click any column header to sort · Click <i class="fa-solid fa-calculator text-blue-600"></i> to simulate custom defects</p>
     </div>
-
   </section>
-
-    <!-- ===== PRICE INSIGHTS PANEL ===== -->
-  <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-    <!-- Storage Impact -->
-    <div class="glass rounded-2xl shadow border border-white p-5">
-      <h3 class="font-bold text-gray-800 text-sm mb-3 flex items-center gap-2">
-        <i class="fa-solid fa-chart-bar text-blue-600"></i>
-        Storage Capacity Impact on Buyback Value
-      </h3>
-      {% if storage_insights %}
-      <div class="space-y-4">
-        {% for group in storage_insights %}
-        <div>
-          <p class="text-xs font-semibold text-gray-600 mb-1.5">{{ group.model }}</p>
-          {% for v in group.variants %}
-          <div class="flex items-center gap-2 mb-1">
-            <span class="text-xs text-gray-500 w-14 text-right shrink-0">{{ v.storage }}</span>
-            <div class="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden">
-              <div class="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full"
-                   style="width: {{ v.pct }}%"></div>
-            </div>
-            <span class="text-xs font-bold text-gray-800 w-20 shrink-0">₹{{ '{:,}'.format(v.buyback_price) }}</span>
-          </div>
-          {% endfor %}
-        </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <p class="text-sm text-gray-400 text-center py-8">Scrape devices to see storage impact analysis</p>
-      {% endif %}
-    </div>
-
-    <!-- Condition Degradation -->
-    <div class="glass rounded-2xl shadow border border-white p-5">
-      <h3 class="font-bold text-gray-800 text-sm mb-3 flex items-center gap-2">
-        <i class="fa-solid fa-sliders text-purple-600"></i>
-        Condition Grade Degradation (iPhone 13 128GB Case Study)
-      </h3>
-      {% if condition_insights %}
-      <div class="space-y-2">
-        {% for row in condition_insights %}
-        <div class="flex items-center gap-3">
-          <span class="{{ row.badge_class }} text-xs font-bold px-2 py-1 rounded-lg w-16 text-center shrink-0">Grade {{ row.grade_letter }}</span>
-          <div class="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
-            <div class="h-full {{ row.bar_class }} rounded-full flex items-center px-3"
-                 style="width: {{ row.pct }}%">
-              <span class="text-white text-xs font-bold">{{ row.pct }}%</span>
-            </div>
-          </div>
-          <span class="text-xs font-bold text-gray-800 w-20 text-right shrink-0">₹{{ '{:,}'.format(row.buyback_price) }}</span>
-        </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <p class="text-sm text-gray-400 text-center py-8">Scrape iPhone 13 data to see condition analysis</p>
-      {% endif %}
-    </div>
-
-  </section>
-
-  <!-- ===== FOOTER ===== -->
-  <footer class="text-center py-4 text-xs text-gray-400">
-    <p>Mobile Price Intelligence POC · Data sourced from <a href="https://www.cashify.in" class="text-blue-500 hover:underline" target="_blank">Cashify.in</a> public pricing pages</p>
-    <p class="mt-1">Built with Flask + Python · Authorized scraping of public catalog pages only</p>
-  </footer>
 
 </main>
 
 <script>
-// ===================== STATE =====================
-let selectedUrl = "";
+// ===================== GLOBAL STATE =====================
+let selectedUrls = new Set();
+let sortDirection = 1;
+let currentModalBasePrice = 0;
+let modelBarChartInstance = null;
+let gradeCurveChartInstance = null;
 
-// ===================== DEVICE SELECTION =====================
-function selectDevice(url, btn) {
-  selectedUrl = url;
-  document.getElementById("custom-url-input").value = url;
-  document.querySelectorAll(".device-card").forEach(b => {
-    b.classList.remove("border-blue-500", "bg-blue-50", "ring-2", "ring-blue-200");
+// ===================== DEVICE MULTI-SELECT =====================
+function toggleDeviceCard(card, url) {
+  const cb = card.querySelector(".device-cb");
+  if (selectedUrls.has(url)) {
+    selectedUrls.delete(url);
+    cb.checked = false;
+    card.classList.remove("border-blue-600", "bg-blue-50/70");
+  } else {
+    selectedUrls.add(url);
+    cb.checked = true;
+    card.classList.add("border-blue-600", "bg-blue-50/70");
+  }
+  if (selectedUrls.size === 1) {
+    document.getElementById("custom-url-input").value = Array.from(selectedUrls)[0];
+  } else if (selectedUrls.size > 1) {
+    document.getElementById("custom-url-input").value = "";
+    document.getElementById("custom-url-input").placeholder = `${selectedUrls.size} devices selected for batch scrape`;
+  } else {
+    document.getElementById("custom-url-input").placeholder = "https://www.cashify.in/sell-old-mobile-phone/used-apple-iphone-15";
+  }
+}
+
+function toggleSelectAllDevices() {
+  const cards = document.querySelectorAll(".device-card");
+  const allSelected = selectedUrls.size === cards.length;
+  selectedUrls.clear();
+  cards.forEach(card => {
+    const url = card.dataset.url;
+    const cb = card.querySelector(".device-cb");
+    if (!allSelected) {
+      selectedUrls.add(url);
+      cb.checked = true;
+      card.classList.add("border-blue-600", "bg-blue-50/70");
+    } else {
+      cb.checked = false;
+      card.classList.remove("border-blue-600", "bg-blue-50/70");
+    }
   });
-  btn.classList.add("border-blue-500", "bg-blue-50", "ring-2", "ring-blue-200");
 }
 
 function clearUrl() {
   document.getElementById("custom-url-input").value = "";
-  selectedUrl = "";
-  document.querySelectorAll(".device-card").forEach(b => {
-    b.classList.remove("border-blue-500", "bg-blue-50", "ring-2", "ring-blue-200");
+  selectedUrls.clear();
+  document.querySelectorAll(".device-card").forEach(card => {
+    card.querySelector(".device-cb").checked = false;
+    card.classList.remove("border-blue-600", "bg-blue-50/70");
   });
 }
 
-// ===================== SCRAPING =====================
-async function scrapeSingle() {
-  const url = document.getElementById("custom-url-input").value.trim();
-  if (!url) {
-    showToast("error", "No Device Selected", "Please select a device or enter a Cashify URL first.");
+// ===================== COLLECT SCRAPE PARAMETERS =====================
+function getScrapeParams() {
+  const storages = Array.from(document.querySelectorAll(".storage-param-cb:checked")).map(cb => cb.value);
+  return {
+    include_matrix: document.getElementById("param-include-matrix").checked,
+    storages: storages,
+    grade_b: Number(document.getElementById("slider-grade-b").value),
+    grade_c: Number(document.getElementById("slider-grade-c").value),
+    grade_d: Number(document.getElementById("slider-grade-d").value),
+    timeout: Number(document.getElementById("param-timeout").value || 15),
+    retries: Number(document.getElementById("param-retries").value || 3),
+  };
+}
+
+function resetScrapeParameters() {
+  document.getElementById("param-include-matrix").checked = true;
+  document.querySelectorAll(".storage-param-cb").forEach(cb => cb.checked = true);
+  document.getElementById("slider-grade-b").value = 88;
+  document.getElementById("val-grade-b").textContent = "88%";
+  document.getElementById("slider-grade-c").value = 72;
+  document.getElementById("val-grade-c").textContent = "72%";
+  document.getElementById("slider-grade-d").value = 45;
+  document.getElementById("val-grade-d").textContent = "45%";
+  document.getElementById("param-timeout").value = 15;
+  document.getElementById("param-retries").value = 3;
+  showToast("info", "Parameters Reset", "Restored industry-standard grading multipliers and storage filters.");
+}
+
+// ===================== API ACTIONS =====================
+async function scrapeSelected() {
+  const customInput = document.getElementById("custom-url-input").value.trim();
+  const urls = selectedUrls.size > 0 ? Array.from(selectedUrls) : (customInput ? [customInput] : []);
+
+  if (urls.length === 0) {
+    showToast("error", "No Target Selected", "Select one or more device cards or paste a Cashify URL.");
     return;
   }
-  showLoading("Scraping " + url.split("/").pop().replace(/-/g, " ") + "…");
+
+  const params = getScrapeParams();
+  params.urls = urls;
+
+  showLoading(`Scraping ${urls.length} target(s) with custom parameters…`);
   try {
     const res = await fetch("/api/scrape", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({url})
+      body: JSON.stringify(params)
     });
     const data = await res.json();
     hideLoading();
     if (data.success) {
-      showToast("success", "Scrape Complete!", data.message);
-      setTimeout(() => location.reload(), 1500);
+      showToast("success", "Custom Scrape Complete!", data.message);
+      setTimeout(() => location.reload(), 1200);
     } else {
-      showToast("error", "Scrape Failed", data.error || "Unknown error.");
+      showToast("error", "Scrape Error", data.error || "Failed to scrape.");
     }
-  } catch(e) {
+  } catch (e) {
     hideLoading();
     showToast("error", "Network Error", e.message);
   }
 }
 
 async function scrapeAll() {
-  showLoading("Refreshing all catalog devices… This may take 30 seconds.");
+  const params = getScrapeParams();
+  showLoading("Refreshing entire catalog with your custom parameters…");
   try {
-    const res = await fetch("/api/scrape-all", {method: "POST"});
+    const res = await fetch("/api/scrape-all", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(params)
+    });
     const data = await res.json();
     hideLoading();
     if (data.success) {
-      showToast("success", "Full Catalog Refreshed!", data.message);
-      setTimeout(() => location.reload(), 1800);
+      showToast("success", "Catalog Refreshed!", data.message);
+      setTimeout(() => location.reload(), 1200);
     } else {
-      showToast("error", "Scrape Failed", data.error || "Unknown error.");
+      showToast("error", "Refresh Failed", data.error || "Unknown error.");
     }
-  } catch(e) {
+  } catch (e) {
     hideLoading();
     showToast("error", "Network Error", e.message);
   }
 }
 
-// ===================== TABLE FILTERING =====================
+async function recalculateGradesOnly() {
+  const params = getScrapeParams();
+  showLoading("Recalculating condition tiers with custom multipliers…");
+  try {
+    const res = await fetch("/api/recalculate-grades", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(params)
+    });
+    const data = await res.json();
+    hideLoading();
+    if (data.success) {
+      showToast("success", "Multipliers Applied!", data.message);
+      setTimeout(() => location.reload(), 1000);
+    } else {
+      showToast("error", "Recalculation Failed", data.error || "Error.");
+    }
+  } catch (e) {
+    hideLoading();
+    showToast("error", "Error", e.message);
+  }
+}
+
+// ===================== TABLE FILTERING & SORTING =====================
 function filterTable() {
-  const search  = document.getElementById("search-input").value.toLowerCase();
-  const brand   = document.getElementById("filter-brand").value;
-  const origin  = document.getElementById("filter-origin").value;
-  const grade   = document.getElementById("filter-grade").value;
-  const rows    = document.querySelectorAll("#table-body tr[data-brand]");
-  let visible   = 0;
+  const search   = document.getElementById("search-input").value.toLowerCase();
+  const brand    = document.getElementById("filter-brand").value;
+  const storage  = document.getElementById("filter-storage").value;
+  const origin   = document.getElementById("filter-origin").value;
+  const grade    = document.getElementById("filter-grade").value;
+  const maxPrice = Number(document.getElementById("filter-max-price").value);
+
+  const rows = document.querySelectorAll("#table-body tr[data-brand]");
+  let visible = 0;
+  let priceSum = 0;
+  const visibleData = [];
 
   rows.forEach(row => {
-    const matchSearch = !search || row.dataset.model.toLowerCase().includes(search);
-    const matchBrand  = !brand  || row.dataset.brand === brand;
-    const matchOrigin = !origin || row.dataset.origin === origin;
-    const matchGrade  = !grade  || row.dataset.grade === grade;
-    const show        = matchSearch && matchBrand && matchOrigin && matchGrade;
+    const mSearch  = !search  || row.dataset.model.toLowerCase().includes(search) || row.dataset.defects.toLowerCase().includes(search);
+    const mBrand   = !brand   || row.dataset.brand === brand;
+    const mStorage = !storage || row.dataset.storage === storage;
+    const mOrigin  = !origin  || row.dataset.origin === origin;
+    const mGrade   = !grade   || row.dataset.grade === grade;
+    const price    = Number(row.dataset.price);
+    const mPrice   = price <= maxPrice;
+
+    const show = mSearch && mBrand && mStorage && mOrigin && mGrade && mPrice;
     row.style.display = show ? "" : "none";
-    if (show) visible++;
+    if (show) {
+      visible++;
+      priceSum += price;
+      visibleData.push({
+        brand: row.dataset.brand,
+        model: row.dataset.model,
+        storage: row.dataset.storage,
+        price: price,
+        grade: row.dataset.grade,
+        origin: row.dataset.origin
+      });
+    }
   });
 
-  document.getElementById("visible-count").textContent =
-    `Showing ${visible} of ${rows.length} records`;
+  document.getElementById("visible-count").textContent = `Showing ${visible} of ${rows.length} records`;
   document.getElementById("record-count-badge").textContent = `${visible} records`;
+  const avg = visible > 0 ? Math.round(priceSum / visible) : 0;
+  document.getElementById("kpi-filtered-avg").textContent = "₹" + avg.toLocaleString("en-IN");
+
+  updateCharts(visibleData);
 }
 
-// ===================== LOADING =====================
+function sortTable(key) {
+  sortDirection *= -1;
+  const tbody = document.getElementById("table-body");
+  const rows = Array.from(tbody.querySelectorAll("tr[data-brand]"));
+
+  rows.sort((a, b) => {
+    if (key === "price") {
+      return (Number(a.dataset.price) - Number(b.dataset.price)) * sortDirection;
+    }
+    const valA = (a.dataset[key] || "").toLowerCase();
+    const valB = (b.dataset[key] || "").toLowerCase();
+    return valA.localeCompare(valB) * sortDirection;
+  });
+
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+// ===================== DYNAMIC CHARTS (CHART.JS) =====================
+function updateCharts(visibleData) {
+  // 1. Model Baseline Bar Chart (Grade A / Verified)
+  const verified = visibleData.filter(d => d.origin === "verified_scraped");
+  const labels = verified.map(d => `${d.model.split("(")[0].replace("Apple ", "").replace("Samsung ", "").trim()} (${d.storage})`);
+  const prices = verified.map(d => d.price);
+
+  const ctxBar = document.getElementById("modelBarChart").getContext("2d");
+  if (modelBarChartInstance) modelBarChartInstance.destroy();
+  modelBarChartInstance = new Chart(ctxBar, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Verified Buyback Price (INR)",
+        data: prices,
+        backgroundColor: "rgba(37, 99, 235, 0.8)",
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: v => "₹" + v.toLocaleString("en-IN") } },
+        x: { ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+
+  // 2. Condition Grade Degradation Curve
+  const grades = ["Grade A", "Grade B", "Grade C", "Grade D"];
+  const gradeAvgs = grades.map(g => {
+    const matching = visibleData.filter(d => d.grade === g);
+    if (!matching.length) return 0;
+    return Math.round(matching.reduce((acc, cur) => acc + cur.price, 0) / matching.length);
+  });
+
+  const ctxLine = document.getElementById("gradeCurveChart").getContext("2d");
+  if (gradeCurveChartInstance) gradeCurveChartInstance.destroy();
+  gradeCurveChartInstance = new Chart(ctxLine, {
+    type: "line",
+    data: {
+      labels: ["Grade A (Flawless)", "Grade B (Good)", "Grade C (Fair)", "Grade D (Broken)"],
+      datasets: [{
+        label: "Average Quote (INR)",
+        data: gradeAvgs,
+        borderColor: "#4f46e5",
+        backgroundColor: "rgba(79, 70, 229, 0.12)",
+        fill: true,
+        tension: 0.35,
+        pointRadius: 5,
+        pointBackgroundColor: ["#16a34a", "#2563eb", "#d97706", "#dc2626"]
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: v => "₹" + v.toLocaleString("en-IN") } }
+      }
+    }
+  });
+}
+
+// ===================== INTERACTIVE DEFECT SIMULATOR MODAL =====================
+function openSimulatorModal(modelName, price, gradeLetter) {
+  // Estimate Grade A baseline if clicked on a simulated row
+  const factorMap = {
+    "A": 1.0,
+    "B": Number(document.getElementById("slider-grade-b").value) / 100,
+    "C": Number(document.getElementById("slider-grade-c").value) / 100,
+    "D": Number(document.getElementById("slider-grade-d").value) / 100
+  };
+  currentModalBasePrice = Math.round(price / (factorMap[gradeLetter] || 1.0));
+
+  document.getElementById("sim-device-title").textContent = modelName;
+  document.getElementById("sim-base-price").textContent = "₹" + currentModalBasePrice.toLocaleString("en-IN");
+  document.querySelectorAll(".sim-defect-cb").forEach(cb => cb.checked = false);
+  updateModalSimulation();
+
+  const modal = document.getElementById("simulator-modal");
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+}
+
+function closeSimulatorModal() {
+  const modal = document.getElementById("simulator-modal");
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+}
+
+function updateModalSimulation() {
+  let totalPenaltyPct = 0;
+  document.querySelectorAll(".sim-defect-cb:checked").forEach(cb => {
+    totalPenaltyPct += Number(cb.dataset.penalty || 0);
+  });
+  const retainedPct = Math.max(15, 100 - totalPenaltyPct);
+  const finalPrice = Math.round(currentModalBasePrice * (retainedPct / 100));
+
+  document.getElementById("sim-final-price").textContent = "₹" + finalPrice.toLocaleString("en-IN");
+  document.getElementById("sim-retention-label").innerHTML =
+    `Value Retained: <strong>${retainedPct}%</strong> (-${100 - retainedPct}% defect deduction)`;
+}
+
+// ===================== LOADING & TOAST =====================
 function showLoading(msg) {
-  document.getElementById("loading-msg").textContent = msg || "Loading…";
-  document.getElementById("loading-overlay").classList.remove("hidden");
-  document.getElementById("loading-overlay").classList.add("flex");
-}
-function hideLoading() {
-  document.getElementById("loading-overlay").classList.add("hidden");
-  document.getElementById("loading-overlay").classList.remove("flex");
+  document.getElementById("loading-msg").textContent = msg || "Processing…";
+  const ov = document.getElementById("loading-overlay");
+  ov.classList.remove("hidden");
+  ov.classList.add("flex");
 }
 
-// ===================== TOAST =====================
+function hideLoading() {
+  const ov = document.getElementById("loading-overlay");
+  ov.classList.add("hidden");
+  ov.classList.remove("flex");
+}
+
 let toastTimer;
 function showToast(type, title, msg) {
   clearTimeout(toastTimer);
@@ -595,24 +943,24 @@ function showToast(type, title, msg) {
   document.getElementById("toast-msg").textContent   = msg;
 
   if (type === "success") {
-    inner.className = "rounded-xl shadow-xl px-4 py-3 flex items-start gap-3 border bg-green-50 border-green-200";
-    icon.innerHTML  = '<i class="fa-solid fa-circle-check text-green-600"></i>';
+    inner.className = "rounded-2xl shadow-2xl px-4 py-3.5 flex items-start gap-3 border bg-emerald-50 border-emerald-200 text-emerald-900";
+    icon.innerHTML  = '<i class="fa-solid fa-circle-check text-emerald-600"></i>';
   } else if (type === "error") {
-    inner.className = "rounded-xl shadow-xl px-4 py-3 flex items-start gap-3 border bg-red-50 border-red-200";
-    icon.innerHTML  = '<i class="fa-solid fa-circle-xmark text-red-500"></i>';
+    inner.className = "rounded-2xl shadow-2xl px-4 py-3.5 flex items-start gap-3 border bg-rose-50 border-rose-200 text-rose-900";
+    icon.innerHTML  = '<i class="fa-solid fa-circle-xmark text-rose-600"></i>';
   } else {
-    inner.className = "rounded-xl shadow-xl px-4 py-3 flex items-start gap-3 border bg-blue-50 border-blue-200";
+    inner.className = "rounded-2xl shadow-2xl px-4 py-3.5 flex items-start gap-3 border bg-blue-50 border-blue-200 text-blue-900";
     icon.innerHTML  = '<i class="fa-solid fa-circle-info text-blue-600"></i>';
   }
 
   toast.classList.remove("hidden");
-  toastTimer = setTimeout(hideToast, 6000);
+  toastTimer = setTimeout(hideToast, 5500);
 }
+
 function hideToast() {
   document.getElementById("toast").classList.add("hidden");
 }
 
-// ===================== INIT =====================
 document.addEventListener("DOMContentLoaded", () => {
   filterTable();
 });
