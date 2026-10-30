@@ -85,8 +85,22 @@ cd "d:\Mobile Scraping"
 pip install -r requirements.txt
 ```
 
-### Execution
-Run the full pipeline (live scraping + condition grading matrix):
+### Running the Web Dashboard (Interactive UI)
+Start the local web server:
+```powershell
+python app.py
+```
+Open your web browser at **`http://127.0.0.1:5000`**.  
+The dashboard provides:
+- **Scraping Control Panel:** Quick-select devices or enter custom Cashify URLs to trigger live on-demand scraping.
+- **KPI Metrics Bar:** Real-time totals, verified quotes count, average buyback value, and min/max quotes.
+- **Filterable Pricing Table:** Live search, filters by Brand (Apple, Samsung), Condition Grade, and Data Origin.
+- **Hardware Specs Badges:** Displays device RAM, CPU Cores, Cameras, and Storage capacity.
+- **Visual Analytics:** Storage capacity impact and condition grade degradation charts.
+- **One-Click Export:** Download updated CSV and JSON files directly from the toolbar.
+
+### CLI Execution
+Run the full CLI pipeline:
 ```powershell
 python main.py
 ```
